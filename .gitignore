@@ -1,0 +1,11 @@
+node_modules/
+dist/
+target/
+.DS_Store
+.env
+*.db
+*.db-shm
+*.db-wal
+src-tauri/gen/
+src-tauri/target/
+fixtures/demo-repo/workspace/

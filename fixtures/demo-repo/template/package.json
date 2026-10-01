@@ -1,0 +1,8 @@
+{
+  "name": "threadback-payments-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:retry": "node --test tests/payment-retry.test.mjs"
+  }
+}

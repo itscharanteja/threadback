@@ -1,0 +1,19 @@
+[package]
+name = "threadback-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+tauri = { version = "2", features = [] }
+threadback-core = { path = "../crates/threadback-core" }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

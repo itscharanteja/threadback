@@ -1,0 +1,33 @@
+{
+  "name": "threadback",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "check": "npm run check:bindings && npm run typecheck && npm run check:rust",
+    "bindings": "$HOME/.cargo/bin/cargo run -p threadback-core --example export_bindings",
+    "check:bindings": "$HOME/.cargo/bin/cargo run -p threadback-core --example export_bindings -- --check",
+    "typecheck": "tsc -b --pretty false",
+    "check:rust": "$HOME/.cargo/bin/cargo check --workspace",
+    "test": "$HOME/.cargo/bin/cargo test --workspace",
+    "format": "$HOME/.cargo/bin/cargo fmt --all -- --check",
+    "tauri": "tauri",
+    "demo:reset": "node scripts/reset-demo.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^7.0.0"
+  }
+}
