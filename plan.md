@@ -86,6 +86,7 @@ threads.pause(threadId) -> WorkThread
 threads.resume(threadId) -> WorkThread
 threads.end(threadId) -> WorkThread
 threads.archive(threadId) -> WorkThread
+threads.list() -> WorkThread[]
 threads.delete(threadId) -> DeletionReceipt
 
 events.list(threadId, cursor?) -> EventPage
@@ -479,6 +480,42 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - The command wrapper and desktop app share the domain and storage implementation through `threadback-core`.
 - Repository and command content is untrusted data, never executable model instruction.
 - The application sends data only after the user reviews and confirms the exact filtered payload.
+
+### Project approval (U-01)
+
+- Approval fails during onboarding, with the error shown on the folder field, if the folder is missing, is already approved (compared by canonical path, so symlinks cannot register it twice), or is not a readable Git repository.
+- The native folder picker uses `tauri-plugin-dialog` with only the `dialog:allow-open` permission.
+- Onboarding shows the default exclusions, the 14-day retention default, and the outbound-data rule, and requires an explicit consent checkbox. The API-key step is not part of onboarding; it belongs to M-01.
+- `projects.defaultExclusions()` was added so the UI shows the exclusions the backend actually applies.
+
+### Evidence timeline and notes (E-05)
+
+- `threads.list()` was added to the public surface so the Home screen and a restart can find existing threads.
+- `threads.start` records the first Git snapshot in the same transaction as the thread, so a project that is not a readable Git repository fails without leaving a thread behind.
+- Notes are stored exactly as typed and are rejected only when blank or longer than 8,000 characters. Redaction runs later (C-01).
+- The timeline is oldest-first, 100 events per page from the desktop commands, with a `timestamp|id` cursor that is stable across events sharing a timestamp.
+- Desktop commands hold the database lock while Git runs (bounded by a 10-second timeout).
+
+### Git snapshot behavior (E-02)
+
+- The collector runs a closed set of read-only Git commands with no caller-supplied arguments, a rebuilt environment, `--no-optional-locks`, and `core.fsmonitor=false`.
+- The project folder may be a subfolder of a repository; only paths under it are reported.
+- Changed paths that are excluded or resolve outside the project are counted in `excludedChanges`, not listed, but still make the snapshot `dirty`.
+- Renames are reported as a delete plus an add (`--no-renames`).
+- The per-project `capture_git` policy flag is not enforced yet because policy storage does not exist; that arrives with the privacy controls (U-05).
+
+### Lifecycle interpretation (P-03)
+
+`spec.md` leaves a few transitions open. The implementation in `threads/lifecycle.rs` resolves them as follows:
+
+- `RESUMED` is the evidence interval that follows a resume, so it records evidence like `ACTIVE`. At most one thread may be `ACTIVE` or `RESUMED` at a time.
+- `pause` moves `ACTIVE` or `RESUMED` to `PAUSED`; `resume` moves `PAUSED` to `ACTIVE` and `READY` to `RESUMED`.
+- `end` moves `ACTIVE`, `RESUMED`, or `PAUSED` to `CHECKPOINT_DRAFT` and sets `ended_at`. **Save My Place** (`begin_checkpoint`) makes the same move from `ACTIVE` or `RESUMED` without setting `ended_at`.
+- `FAILED` returns to `CHECKPOINT_DRAFT` through an explicit retry (FR-20).
+- `archive` is allowed from `READY`, `RESUMED`, `PAUSED`, and `FAILED`.
+- `delete` is allowed from every state except `DELETED`; the transactional row removal itself belongs to P-05.
+- Startup recovery (P-04) pauses any thread still `ACTIVE` or `RESUMED` with the system reason `interrupted` and reports the gap from its last acknowledged event. Capture never resumes silently after a restart.
+- Open question: there is no way to abandon a `CHECKPOINT_DRAFT` and return to work.
 
 ## 10. Final acceptance checklist
 

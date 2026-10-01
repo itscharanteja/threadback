@@ -12,6 +12,7 @@ tauri-build = { version = "2", features = [] }
 chrono.workspace = true
 serde.workspace = true
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 threadback-core = { path = "../crates/threadback-core" }
 
 [features]

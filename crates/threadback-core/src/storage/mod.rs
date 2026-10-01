@@ -18,7 +18,12 @@ impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DomainError> {
         let connection = Connection::open(path).map_err(storage_error)?;
         connection
-            .execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 PRAGMA journal_mode = WAL;
+                 PRAGMA synchronous = FULL;
+                 PRAGMA busy_timeout = 5000;",
+            )
             .map_err(storage_error)?;
         let database = Self { connection };
         database.migrate()?;
@@ -39,6 +44,30 @@ impl Database {
         self.connection
             .execute_batch(MIGRATION_0001)
             .map_err(storage_error)
+    }
+
+    /// Runs `operation` atomically. Every write inside either commits together
+    /// or rolls back. Not reentrant.
+    pub fn with_transaction<T>(
+        &self,
+        operation: impl FnOnce(&Database) -> Result<T, DomainError>,
+    ) -> Result<T, DomainError> {
+        self.connection
+            .execute_batch("BEGIN IMMEDIATE")
+            .map_err(storage_error)?;
+        match operation(self) {
+            Ok(value) => {
+                if let Err(error) = self.connection.execute_batch("COMMIT") {
+                    let _ = self.connection.execute_batch("ROLLBACK");
+                    return Err(storage_error(error));
+                }
+                Ok(value)
+            }
+            Err(error) => {
+                let _ = self.connection.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
     }
 
     pub fn insert_project(&self, project: &Project) -> Result<(), DomainError> {
@@ -64,6 +93,29 @@ impl Database {
                 "SELECT id, display_name, canonical_root, created_at, updated_at
                  FROM projects WHERE id = ?1",
                 [&id.0],
+                |row| {
+                    Ok(Project {
+                        id: ProjectId(row.get(0)?),
+                        display_name: row.get(1)?,
+                        canonical_root: row.get(2)?,
+                        created_at: parse_timestamp(row.get::<_, String>(3)?)?,
+                        updated_at: parse_timestamp(row.get::<_, String>(4)?)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(storage_error)
+    }
+
+    pub fn find_project_by_root(
+        &self,
+        canonical_root: &str,
+    ) -> Result<Option<Project>, DomainError> {
+        self.connection
+            .query_row(
+                "SELECT id, display_name, canonical_root, created_at, updated_at
+                 FROM projects WHERE canonical_root = ?1",
+                [canonical_root],
                 |row| {
                     Ok(Project {
                         id: ProjectId(row.get(0)?),
@@ -137,20 +189,113 @@ impl Database {
                 "SELECT id, project_id, title, goal, state, started_at, ended_at, created_at, updated_at
                  FROM work_threads WHERE id = ?1",
                 [&id.0],
-                |row| {
-                    let ended_at: Option<String> = row.get(6)?;
-                    Ok(WorkThread {
-                        id: ThreadId(row.get(0)?),
-                        project_id: ProjectId(row.get(1)?),
-                        title: row.get(2)?,
-                        goal: row.get(3)?,
-                        state: str_to_state(row.get::<_, String>(4)?)?,
-                        started_at: parse_timestamp(row.get::<_, String>(5)?)?,
-                        ended_at: ended_at.map(parse_timestamp).transpose()?,
-                        created_at: parse_timestamp(row.get::<_, String>(7)?)?,
-                        updated_at: parse_timestamp(row.get::<_, String>(8)?)?,
-                    })
-                },
+                thread_from_row,
+            )
+            .optional()
+            .map_err(storage_error)
+    }
+
+    /// The thread currently recording evidence, if any.
+    pub fn find_live_thread(&self) -> Result<Option<WorkThread>, DomainError> {
+        self.connection
+            .query_row(
+                "SELECT id, project_id, title, goal, state, started_at, ended_at, created_at, updated_at
+                 FROM work_threads WHERE state IN ('ACTIVE', 'RESUMED') LIMIT 1",
+                [],
+                thread_from_row,
+            )
+            .optional()
+            .map_err(storage_error)
+    }
+
+    /// Most recently updated first.
+    pub fn list_threads(&self) -> Result<Vec<WorkThread>, DomainError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id, project_id, title, goal, state, started_at, ended_at, created_at, updated_at
+                 FROM work_threads ORDER BY updated_at DESC, id",
+            )
+            .map_err(storage_error)?;
+        statement
+            .query_map([], thread_from_row)
+            .map_err(storage_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage_error)
+    }
+
+    pub fn list_live_threads(&self) -> Result<Vec<WorkThread>, DomainError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id, project_id, title, goal, state, started_at, ended_at, created_at, updated_at
+                 FROM work_threads WHERE state IN ('ACTIVE', 'RESUMED') ORDER BY started_at, id",
+            )
+            .map_err(storage_error)?;
+        statement
+            .query_map([], thread_from_row)
+            .map_err(storage_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage_error)
+    }
+
+    pub fn latest_event_timestamp(
+        &self,
+        thread_id: &ThreadId,
+    ) -> Result<Option<DateTime<Utc>>, DomainError> {
+        self.connection
+            .query_row(
+                "SELECT timestamp FROM events WHERE thread_id = ?1
+                 ORDER BY timestamp DESC, id DESC LIMIT 1",
+                [&thread_id.0],
+                |row| parse_timestamp(row.get::<_, String>(0)?),
+            )
+            .optional()
+            .map_err(storage_error)
+    }
+
+    /// Moves a thread between states only if it is still in `from`, so a stale
+    /// caller cannot overwrite a concurrent transition.
+    pub fn update_thread_state(
+        &self,
+        id: &ThreadId,
+        from: &ThreadState,
+        to: &ThreadState,
+        ended_at: Option<DateTime<Utc>>,
+        updated_at: DateTime<Utc>,
+    ) -> Result<(), DomainError> {
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE work_threads SET state = ?1, ended_at = ?2, updated_at = ?3
+                 WHERE id = ?4 AND state = ?5",
+                params![
+                    state_to_str(to),
+                    ended_at.map(|value| value.to_rfc3339()),
+                    updated_at.to_rfc3339(),
+                    id.0,
+                    state_to_str(from),
+                ],
+            )
+            .map_err(storage_error)?;
+        if changed == 0 {
+            return Err(DomainError::invalid_state(
+                "The thread changed while this action was in progress. Reload and try again.",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn latest_checkpoint_id(
+        &self,
+        thread_id: &ThreadId,
+    ) -> Result<Option<CheckpointId>, DomainError> {
+        self.connection
+            .query_row(
+                "SELECT id FROM checkpoints WHERE thread_id = ?1
+                 ORDER BY created_at DESC, id DESC LIMIT 1",
+                [&thread_id.0],
+                |row| Ok(CheckpointId(row.get(0)?)),
             )
             .optional()
             .map_err(storage_error)
@@ -323,6 +468,21 @@ impl Database {
             .map_err(storage_error)?;
         Ok(())
     }
+}
+
+fn thread_from_row(row: &Row<'_>) -> rusqlite::Result<WorkThread> {
+    let ended_at: Option<String> = row.get(6)?;
+    Ok(WorkThread {
+        id: ThreadId(row.get(0)?),
+        project_id: ProjectId(row.get(1)?),
+        title: row.get(2)?,
+        goal: row.get(3)?,
+        state: str_to_state(row.get::<_, String>(4)?)?,
+        started_at: parse_timestamp(row.get::<_, String>(5)?)?,
+        ended_at: ended_at.map(parse_timestamp).transpose()?,
+        created_at: parse_timestamp(row.get::<_, String>(7)?)?,
+        updated_at: parse_timestamp(row.get::<_, String>(8)?)?,
+    })
 }
 
 fn event_from_row(row: &Row<'_>) -> rusqlite::Result<ThreadEvent> {

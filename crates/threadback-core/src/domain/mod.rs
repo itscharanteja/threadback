@@ -108,6 +108,62 @@ pub struct ProjectPolicy {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct StartThreadInput {
+    pub project_id: ProjectId,
+    pub title: String,
+    pub goal: String,
+    pub hypothesis: Option<String>,
+}
+
+impl StartThreadInput {
+    pub fn validate(&self) -> Result<(), crate::DomainError> {
+        if self.title.trim().is_empty() {
+            return Err(crate::DomainError::invalid_input(
+                "A thread title is required.",
+                "title",
+            ));
+        }
+        if self.goal.trim().is_empty() {
+            return Err(crate::DomainError::invalid_input(
+                "A thread requires an intended outcome.",
+                "goal",
+            ));
+        }
+        Ok(())
+    }
+}
+
+pub const MAX_NOTE_CHARS: usize = 8_000;
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AddNoteInput {
+    pub text: String,
+    pub label: NoteLabel,
+}
+
+impl AddNoteInput {
+    /// The text is stored exactly as typed; it is only rejected when blank or
+    /// too long.
+    pub fn validate(&self) -> Result<(), crate::DomainError> {
+        if self.text.trim().is_empty() {
+            return Err(crate::DomainError::invalid_input(
+                "A note cannot be empty.",
+                "text",
+            ));
+        }
+        if self.text.chars().count() > MAX_NOTE_CHARS {
+            return Err(crate::DomainError::invalid_input(
+                format!("A note can be at most {MAX_NOTE_CHARS} characters."),
+                "text",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkThread {
     pub id: ThreadId,
     pub project_id: ProjectId,
@@ -155,6 +211,33 @@ pub struct ThreadEvent {
     pub payload: EventPayload,
     pub sensitivity: Sensitivity,
     pub content_hash: String,
+}
+
+impl ThreadEvent {
+    /// Builds an event stamped now, hashing the serialized payload.
+    pub fn new(
+        thread_id: ThreadId,
+        payload: EventPayload,
+        sensitivity: Sensitivity,
+    ) -> Result<Self, crate::DomainError> {
+        use sha2::{Digest, Sha256};
+
+        let serialized = serde_json::to_vec(&payload).map_err(|error| {
+            crate::DomainError::internal(format!("Local JSON serialization failed: {error}"))
+        })?;
+        let content_hash = Sha256::digest(&serialized)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        Ok(Self {
+            id: EventId::new(),
+            thread_id,
+            timestamp: Utc::now(),
+            payload,
+            sensitivity,
+            content_hash,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

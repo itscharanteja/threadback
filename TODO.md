@@ -39,20 +39,20 @@
 
 **Deliverable:** A project-bound work thread captures a read-only Git snapshot, persists its state, and recovers after application restart.
 
-- [ ] P-03 Implement and test all legal lifecycle transitions.
-- [ ] P-04 Commit events before acknowledgement and recover interrupted active threads.
-- [ ] E-01 Enforce canonical project roots, exclusions, traversal checks, and symlink checks.
-- [ ] E-02 Capture branch, HEAD, porcelain status, paths, and diff statistics read-only.
-- [ ] E-05 Implement labelled notes and the chronological evidence timeline.
-- [ ] U-01 Build the application shell, onboarding, native folder selection, and status indicators.
+- [x] P-03 Implement and test all legal lifecycle transitions.
+- [x] P-04 Commit events before acknowledgement and recover interrupted active threads.
+- [x] E-01 Enforce canonical project roots, exclusions, traversal checks, and symlink checks.
+- [x] E-02 Capture branch, HEAD, porcelain status, paths, and diff statistics read-only.
+- [x] E-05 Implement labelled notes and the chronological evidence timeline.
+- [x] U-01 Build the application shell, onboarding, native folder selection, and status indicators.
 
 ### Gate G1 — Local thread
 
-- [ ] A project can be approved through the desktop UI.
-- [ ] A thread cannot start without a goal.
-- [ ] The initial Git snapshot appears in the timeline.
-- [ ] Restarting the application restores the acknowledged thread and evidence.
-- [ ] Traversal and outside-root symlink tests pass.
+- [x] A project can be approved through the desktop UI.
+- [x] A thread cannot start without a goal.
+- [x] The initial Git snapshot appears in the timeline.
+- [x] Restarting the application restores the acknowledged thread and evidence.
+- [x] Traversal and outside-root symlink tests pass.
 
 ## Day 3 — Explicit command evidence and offline checkpoint
 

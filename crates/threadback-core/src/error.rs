@@ -31,6 +31,33 @@ impl DomainError {
         }
     }
 
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            code: ErrorCode::NotFound,
+            message: message.into(),
+            retryable: false,
+            field: None,
+        }
+    }
+
+    pub fn invalid_state(message: impl Into<String>) -> Self {
+        Self {
+            code: ErrorCode::InvalidState,
+            message: message.into(),
+            retryable: false,
+            field: None,
+        }
+    }
+
+    pub fn boundary(message: impl Into<String>) -> Self {
+        Self {
+            code: ErrorCode::ProjectBoundaryViolation,
+            message: message.into(),
+            retryable: false,
+            field: None,
+        }
+    }
+
     pub fn storage(message: impl Into<String>) -> Self {
         Self {
             code: ErrorCode::StorageUnavailable,

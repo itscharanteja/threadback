@@ -26,6 +26,10 @@ export type CreateProjectInput = { displayName: string, rootPath: string, };
 
 export type ProjectPolicy = { projectId: ProjectId, exclusions: Array<string>, retentionDays: number, captureGit: boolean, captureCommands: boolean, captureFileMetadata: boolean, redactionPatterns: Array<string>, };
 
+export type StartThreadInput = { projectId: ProjectId, title: string, goal: string, hypothesis: string | null, };
+
+export type AddNoteInput = { text: string, label: NoteLabel, };
+
 export type WorkThread = { id: ThreadId, projectId: ProjectId, title: string, goal: string, state: ThreadState, startedAt: string, endedAt: string | null, createdAt: string, updatedAt: string, };
 
 export type EventPayload = { "type": "thread_started", "payload": { goal: string, hypothesis: string | null, } } | { "type": "thread_paused", "payload": { reason: string, } } | { "type": "thread_resumed", "payload": { prior_checkpoint_id: CheckpointId | null, } } | { "type": "git_snapshot", "payload": JsonValue } | { "type": "file_changed", "payload": JsonValue } | { "type": "command_started", "payload": JsonValue } | { "type": "command_finished", "payload": JsonValue } | { "type": "note_added", "payload": { text: string, label: NoteLabel, } } | { "type": "checkpoint_requested", "payload": JsonValue } | { "type": "checkpoint_generated", "payload": JsonValue } | { "type": "checkpoint_approved", "payload": JsonValue };
@@ -33,6 +37,49 @@ export type EventPayload = { "type": "thread_started", "payload": { goal: string
 export type ThreadEvent = { id: EventId, threadId: ThreadId, timestamp: string, payload: EventPayload, sensitivity: Sensitivity, contentHash: string, };
 
 export type EventPage = { events: Array<ThreadEvent>, nextCursor: string | null, };
+
+export type ChangedPath = { path: string, 
+/**
+ * Porcelain index column, e.g. `M`, `A`, `D`, `?`.
+ */
+indexStatus: string, 
+/**
+ * Porcelain worktree column.
+ */
+worktreeStatus: string, };
+
+export type FileDiffStat = { path: string, additions: number, deletions: number, binary: boolean, };
+
+export type DiffStats = { files: Array<FileDiffStat>, fileCount: number, additions: number, deletions: number, };
+
+export type GitSnapshot = { 
+/**
+ * `None` when HEAD is detached.
+ */
+branch: string | null, 
+/**
+ * `None` when the repository has no commits yet.
+ */
+head: string | null, 
+/**
+ * True when Git reports any change, including excluded paths.
+ */
+dirty: boolean, changedPaths: Array<ChangedPath>, staged: DiffStats, unstaged: DiffStats, 
+/**
+ * Changed paths withheld because they are excluded or resolve outside the
+ * project.
+ */
+excludedChanges: number, 
+/**
+ * True when a path list was cut at the listing limit.
+ */
+truncated: boolean, };
+
+export type RecoveryReport = { threadId: ThreadId, threadTitle: string, 
+/**
+ * Timestamp of the last acknowledged event, which starts the gap.
+ */
+lastEventAt: string | null, recoveredAt: string, };
 
 export type ArtifactRef = { id: ArtifactId, eventId: EventId, artifactType: string, relativePath: string, contentHash: string, lineHint: number | null, };
 
