@@ -17,6 +17,15 @@ export function Timeline({ events }: { events: ThreadEvent[] }) {
             </div>
             <p className={summary.preformatted ? "preformatted" : undefined}>{summary.text}</p>
             {summary.detail ? <p className="detail">{summary.detail}</p> : null}
+            {summary.outputs?.map((output) => (
+              <details key={output.label} className="output">
+                <summary>
+                  {output.label}
+                  {output.note ? <span className="hint"> — {output.note}</span> : null}
+                </summary>
+                {output.text ? <pre>{output.text}</pre> : null}
+              </details>
+            ))}
           </li>
         );
       })}

@@ -58,7 +58,7 @@
 
 **Deliverable:** Wrapped commands, labelled notes, and Git evidence form a durable, inspectable checkpoint without network access.
 
-- [ ] E-03 Implement `tb run -- <command> [args...]` with exit-code forwarding.
+- [x] E-03 Implement `tb run -- <command> [args...]` with exit-code forwarding.
 - [ ] E-04 Bound stdout/stderr and retain head/tail truncation metadata.
 - [ ] C-03 Select, deduplicate, budget, and persist the checkpoint evidence interval.
 - [ ] U-02 Build the active-thread timeline, notes, pause, end, and **Save My Place** workflow.

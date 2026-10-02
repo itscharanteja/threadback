@@ -1,16 +1,20 @@
 pub mod collectors;
 pub mod domain;
 pub mod error;
+pub mod paths;
 pub mod projects;
 pub mod storage;
 pub mod threads;
 
 pub use collectors::{
-    ChangedPath, DiffStats, FileDiffStat, GitSnapshot, ProjectBoundary, ResolvedPath,
-    capture_snapshot, default_exclusions,
+    CaptureLimits, ChangedPath, CommandFinishedPayload, CommandRequest, CommandStartedPayload,
+    DiffStats, FileDiffStat, GitSnapshot, OutputCapture, OutputExcerpt, ProjectBoundary,
+    ResolvedPath, RunIo, RunOutcome, capture_snapshot, default_exclusions, display_command,
+    run_command,
 };
 pub use domain::*;
 pub use error::{DomainError, ErrorCode};
+pub use paths::database_path;
 pub use projects::approve_project;
 pub use storage::Database;
 pub use threads::{

@@ -4,7 +4,7 @@ use tauri::{App, Manager, State};
 use threadback_core::{
     AddNoteInput, AppStatus, CreateProjectInput, Database, DomainError, EventPage, PauseReason,
     Project, RecoveryReport, StartThreadInput, ThreadEvent, ThreadId, ThreadService, WorkThread,
-    approve_project, default_exclusions, recover_interrupted_threads,
+    approve_project, database_path, default_exclusions, recover_interrupted_threads,
 };
 
 const TIMELINE_PAGE_SIZE: u32 = 100;
@@ -15,9 +15,12 @@ pub struct AppState {
 }
 
 pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
-    let data_dir = app.path().app_data_dir()?;
-    fs::create_dir_all(&data_dir)?;
-    let database = Database::open(data_dir.join("threadback.db"))?;
+    // The same path the `tb` command uses, so both write to one database.
+    let path = database_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let database = Database::open(path)?;
     // Threads still recording when the app last stopped are paused and reported.
     let recovery = recover_interrupted_threads(&database)?;
     app.manage(AppState {

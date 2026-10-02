@@ -1,4 +1,12 @@
-import type { GitSnapshot, NoteLabel, ThreadEvent, ThreadState } from "../bindings/contracts";
+import type {
+  CommandFinishedPayload,
+  CommandStartedPayload,
+  GitSnapshot,
+  NoteLabel,
+  OutputExcerpt,
+  ThreadEvent,
+  ThreadState,
+} from "../bindings/contracts";
 
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -43,6 +51,8 @@ export interface EventSummary {
   detail?: string;
   /** Preserves line breaks, used for user-authored text. */
   preformatted?: boolean;
+  /** Captured output, shown expandable. */
+  outputs?: { label: string; text: string; note?: string }[];
 }
 
 export function summarizeEvent(event: ThreadEvent): EventSummary {
@@ -66,11 +76,57 @@ export function summarizeEvent(event: ThreadEvent): EventSummary {
       return { kind: "Resumed", text: "Recording resumed." };
     case "git_snapshot":
       return summarizeSnapshot(entry.payload as unknown as GitSnapshot);
+    case "command_started": {
+      const started = entry.payload as unknown as CommandStartedPayload;
+      return { kind: "Command", text: started.command, detail: `Run in ${started.cwd}` };
+    }
+    case "command_finished":
+      return summarizeCommandFinished(entry.payload as unknown as CommandFinishedPayload);
     case "note_added":
       return { kind: NOTE_LABELS[entry.payload.label], text: entry.payload.text, preformatted: true };
     default:
       return { kind: entry.type.replace(/_/g, " "), text: "Recorded." };
   }
+}
+
+function describeExit(finished: CommandFinishedPayload): string {
+  if (finished.exitCode !== null) {
+    return finished.exitCode === 0 ? "succeeded (exit code 0)" : `failed (exit code ${finished.exitCode})`;
+  }
+  return `ended by signal ${finished.signal ?? "unknown"}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function excerptOutput(label: string, excerpt: OutputExcerpt) {
+  if (excerpt.originalBytes === 0) return null;
+  if (excerpt.binary) {
+    return { label, text: "", note: `${formatBytes(excerpt.originalBytes)} of binary output, not stored.` };
+  }
+  const note = excerpt.truncated
+    ? `Showing the first and last parts of ${formatBytes(excerpt.originalBytes)}; ${formatBytes(excerpt.omittedBytes)} omitted.`
+    : undefined;
+  const text = excerpt.truncated
+    ? `${excerpt.head}\n… ${formatBytes(excerpt.omittedBytes)} omitted …\n${excerpt.tail}`
+    : excerpt.head + excerpt.tail;
+  return { label, text, note };
+}
+
+function summarizeCommandFinished(finished: CommandFinishedPayload): EventSummary {
+  const seconds = (finished.durationMs / 1000).toFixed(finished.durationMs < 10_000 ? 2 : 1);
+  const outputs = [
+    excerptOutput("Standard output", finished.stdout),
+    excerptOutput("Standard error", finished.stderr),
+  ].filter((output): output is NonNullable<typeof output> => output !== null);
+  return {
+    kind: "Command finished",
+    text: `${describeExit(finished)} after ${seconds} s`,
+    outputs,
+  };
 }
 
 function summarizeSnapshot(snapshot: GitSnapshot): EventSummary {

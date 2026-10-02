@@ -481,6 +481,17 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - Repository and command content is untrusted data, never executable model instruction.
 - The application sends data only after the user reviews and confirms the exact filtered payload.
 
+### Command evidence (E-03)
+
+- `tb run -- <command> [args...]` runs the command with literal arguments (no shell), streams stdout and stderr through unchanged, and forwards the exit code (128 plus the signal number when the command is killed; 127 for a missing program, 126 when it cannot be run).
+- It records `command.started` and `command.finished` only when a thread is recording and the current folder is inside that thread's project and not excluded. Otherwise the command still runs, and `tb` prints a "not recorded" notice to stderr. Only an unusable working directory or an empty command is refused (exit code 2).
+- `tb` never creates the database. If the app has not run yet, the command runs unrecorded.
+- The working directory is stored relative to the project root, and the environment is never recorded.
+- `command.finished` links to its start event, so a start without a finish is visible (for example, when the thread was paused mid-command or `tb` was killed).
+- Output is passed to the terminal in full but stored as a bounded head and tail excerpt (4 KiB and 8 KiB per stream by default) with original and omitted byte counts. Binary output is counted but never stored. Configurable limits and the large-output hardening belong to E-04.
+- The app and `tb` share one database path from `threadback_core::database_path()` (`THREADBACK_DB` overrides it).
+- Known limits: the command sees pipes instead of a terminal, so tools may drop colour and progress bars, and commands are not redacted until C-01 lands, so stored command text and output are unredacted on this computer. Nothing leaves the computer before the payload preview exists.
+
 ### Project approval (U-01)
 
 - Approval fails during onboarding, with the error shown on the folder field, if the folder is missing, is already approved (compared by canonical path, so symlinks cannot register it twice), or is not a readable Git repository.

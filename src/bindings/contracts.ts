@@ -75,6 +75,28 @@ excludedChanges: number,
  */
 truncated: boolean, };
 
+export type CommandStartedPayload = { 
+/**
+ * Display form of the command line. Never includes the environment.
+ */
+command: string, 
+/**
+ * Working directory relative to the project root.
+ */
+cwd: string, };
+
+export type OutputExcerpt = { head: string, tail: string, originalBytes: number, omittedBytes: number, truncated: boolean, 
+/**
+ * Binary output is counted but never stored.
+ */
+binary: boolean, };
+
+export type CommandFinishedPayload = { startedEventId: EventId, 
+/**
+ * `None` when the process was ended by a signal.
+ */
+exitCode: number | null, signal: number | null, durationMs: number, stdout: OutputExcerpt, stderr: OutputExcerpt, };
+
 export type RecoveryReport = { threadId: ThreadId, threadTitle: string, 
 /**
  * Timestamp of the last acknowledged event, which starts the gap.

@@ -412,6 +412,25 @@ section > h2 + .cards {
   font-size: 0.9rem;
 }
 
+.output summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.output pre {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   button {
     transition: border-color 120ms ease;

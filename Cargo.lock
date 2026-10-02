@@ -3420,6 +3420,10 @@ dependencies = [
 name = "tb-cli"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "libc",
+ "serde_json",
+ "tempfile",
  "threadback-core",
 ]
 
