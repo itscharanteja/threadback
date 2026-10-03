@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AddNoteInput,
+  Checkpoint,
+  CheckpointId,
   CreateProjectInput,
   EventPage,
   Project,
@@ -51,6 +53,7 @@ export const threads = {
     return invoke<WorkThread>("threads_resume", { threadId });
   },
 
+  /** Ends the thread and saves its checkpoint draft. */
   end(threadId: ThreadId): Promise<WorkThread> {
     return invoke<WorkThread>("threads_end", { threadId });
   },
@@ -72,5 +75,21 @@ export const events = {
 
   captureGit(threadId: ThreadId): Promise<ThreadEvent> {
     return invoke<ThreadEvent>("events_capture_git", { threadId });
+  },
+};
+
+export const checkpoints = {
+  /** Save My Place: works offline and stores a local draft. */
+  savePlace(threadId: ThreadId): Promise<Checkpoint> {
+    return invoke<Checkpoint>("checkpoints_save_place", { threadId });
+  },
+
+  /** Newest first. */
+  list(threadId: ThreadId): Promise<Checkpoint[]> {
+    return invoke<Checkpoint[]>("checkpoints_list", { threadId });
+  },
+
+  get(checkpointId: CheckpointId): Promise<Checkpoint> {
+    return invoke<Checkpoint>("checkpoints_get", { checkpointId });
   },
 };

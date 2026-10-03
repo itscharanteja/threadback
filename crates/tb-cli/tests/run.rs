@@ -154,7 +154,9 @@ fn version_and_help_work() {
     let version = tb(&database, project.path(), &["--version"]);
     assert!(String::from_utf8_lossy(&version.stdout).starts_with("tb "));
     let help = tb(&database, project.path(), &[]);
-    assert!(String::from_utf8_lossy(&help.stdout).contains("tb run -- <command>"));
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("tb run [options] -- <command>"));
+    assert!(help.contains("--head-bytes") && help.contains("--tail-bytes"));
 }
 
 /// Ctrl-C goes to the whole foreground process group. The child dies, but the
@@ -205,4 +207,145 @@ fn interrupting_the_group_still_records_the_finish() {
     assert_eq!(finished.len(), 1);
     assert_eq!(finished[0]["signal"], 2);
     assert!(finished[0]["exitCode"].is_null());
+}
+
+fn tb_with_env(
+    database: &Path,
+    cwd: &Path,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_tb"));
+    command
+        .args(args)
+        .current_dir(cwd)
+        .env("THREADBACK_DB", database)
+        .env_remove("THREADBACK_HEAD_BYTES")
+        .env_remove("THREADBACK_TAIL_BYTES");
+    for (name, value) in env {
+        command.env(name, value);
+    }
+    command.output().unwrap()
+}
+
+const ALPHABET: &str = "printf 0123456789abcdefghijklmnopqrstuvwxyz";
+
+#[test]
+fn the_limit_flags_change_what_is_stored_but_not_what_is_printed() {
+    let (project, data, thread_id) = recording_project();
+    let database = data.path().join("threadback.db");
+
+    let output = tb(
+        &database,
+        project.path(),
+        &[
+            "run",
+            "--head-bytes",
+            "3",
+            "--tail-bytes=4",
+            "--",
+            "sh",
+            "-c",
+            ALPHABET,
+        ],
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "0123456789abcdefghijklmnopqrstuvwxyz"
+    );
+
+    let finished = finished_events(&database, &thread_id);
+    let stdout = &finished[0]["stdout"];
+    assert_eq!(stdout["head"], "012");
+    assert_eq!(stdout["tail"], "wxyz");
+    assert_eq!(stdout["originalBytes"], 36);
+    assert_eq!(stdout["omittedBytes"], 29);
+    assert_eq!(stdout["truncated"], true);
+}
+
+#[test]
+fn the_environment_sets_limits_and_flags_win() {
+    let (project, data, thread_id) = recording_project();
+    let database = data.path().join("threadback.db");
+    let env = [
+        ("THREADBACK_HEAD_BYTES", "2"),
+        ("THREADBACK_TAIL_BYTES", "2"),
+    ];
+
+    tb_with_env(
+        &database,
+        project.path(),
+        &["run", "--", "sh", "-c", ALPHABET],
+        &env,
+    );
+    tb_with_env(
+        &database,
+        project.path(),
+        &["run", "--head-bytes", "5", "--", "sh", "-c", ALPHABET],
+        &env,
+    );
+
+    let finished = finished_events(&database, &thread_id);
+    assert_eq!(
+        (
+            finished[0]["stdout"]["head"].as_str(),
+            finished[0]["stdout"]["tail"].as_str()
+        ),
+        (Some("01"), Some("yz"))
+    );
+    assert_eq!(
+        (
+            finished[1]["stdout"]["head"].as_str(),
+            finished[1]["stdout"]["tail"].as_str()
+        ),
+        (Some("01234"), Some("yz"))
+    );
+}
+
+#[test]
+fn options_after_the_command_are_the_commands_own() {
+    let (project, data, thread_id) = recording_project();
+    let database = data.path().join("threadback.db");
+    let output = tb(
+        &database,
+        project.path(),
+        &["run", "--", "echo", "--head-bytes", "1"],
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "--head-bytes 1\n");
+    assert_eq!(
+        finished_events(&database, &thread_id)[0]["stdout"]["head"],
+        "--head-bytes 1\n"
+    );
+}
+
+#[test]
+fn invalid_limits_stop_before_the_command_runs() {
+    let (project, data, thread_id) = recording_project();
+    let database = data.path().join("threadback.db");
+    let marker = project.path().join("ran");
+    let touch = format!("touch {}", marker.display());
+
+    for bad in [
+        &["run", "--head-bytes", "lots", "--", "sh", "-c", &touch][..],
+        &["run", "--tail-bytes", "65537", "--", "sh", "-c", &touch][..],
+        &["run", "--unknown", "--", "sh", "-c", &touch][..],
+    ] {
+        let output = tb(&database, project.path(), bad);
+        assert_eq!(output.status.code(), Some(2), "{bad:?}");
+        assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
+    }
+    let output = tb_with_env(
+        &database,
+        project.path(),
+        &["run", "--", "sh", "-c", &touch],
+        &[("THREADBACK_HEAD_BYTES", "nope")],
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("THREADBACK_HEAD_BYTES"));
+
+    assert!(
+        !marker.exists(),
+        "an invalid limit must not run the command"
+    );
+    assert!(finished_events(&database, &thread_id).is_empty());
 }

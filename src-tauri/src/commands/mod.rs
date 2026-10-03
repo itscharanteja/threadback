@@ -2,9 +2,10 @@ use std::{fs, sync::Mutex};
 
 use tauri::{App, Manager, State};
 use threadback_core::{
-    AddNoteInput, AppStatus, CreateProjectInput, Database, DomainError, EventPage, PauseReason,
-    Project, RecoveryReport, StartThreadInput, ThreadEvent, ThreadId, ThreadService, WorkThread,
-    approve_project, database_path, default_exclusions, recover_interrupted_threads,
+    AddNoteInput, AppStatus, Checkpoint, CheckpointId, CheckpointService, CheckpointTrigger,
+    CreateProjectInput, Database, DomainError, EventPage, PauseReason, Project, RecoveryReport,
+    StartThreadInput, ThreadEvent, ThreadId, ThreadService, WorkThread, approve_project,
+    database_path, default_exclusions, recover_interrupted_threads,
 };
 
 const TIMELINE_PAGE_SIZE: u32 = 100;
@@ -93,12 +94,43 @@ pub fn threads_resume(
     ThreadService::new(&*database(&state)?).resume(&thread_id)
 }
 
+/// Ends the thread and saves its checkpoint draft, so a closed thread always
+/// has something to review.
 #[tauri::command]
 pub fn threads_end(
     thread_id: ThreadId,
     state: State<'_, AppState>,
 ) -> Result<WorkThread, DomainError> {
-    ThreadService::new(&*database(&state)?).end(&thread_id)
+    let database = database(&state)?;
+    CheckpointService::new(&database).save(&thread_id, CheckpointTrigger::ThreadEnded)?;
+    database
+        .find_thread(&thread_id)?
+        .ok_or_else(|| DomainError::not_found("That thread no longer exists."))
+}
+
+/// Save My Place: works offline and stores a local checkpoint draft.
+#[tauri::command]
+pub fn checkpoints_save_place(
+    thread_id: ThreadId,
+    state: State<'_, AppState>,
+) -> Result<Checkpoint, DomainError> {
+    CheckpointService::new(&*database(&state)?).save(&thread_id, CheckpointTrigger::Manual)
+}
+
+#[tauri::command]
+pub fn checkpoints_list(
+    thread_id: ThreadId,
+    state: State<'_, AppState>,
+) -> Result<Vec<Checkpoint>, DomainError> {
+    CheckpointService::new(&*database(&state)?).list(&thread_id)
+}
+
+#[tauri::command]
+pub fn checkpoints_get(
+    checkpoint_id: CheckpointId,
+    state: State<'_, AppState>,
+) -> Result<Checkpoint, DomainError> {
+    CheckpointService::new(&*database(&state)?).get(&checkpoint_id)
 }
 
 #[tauri::command]

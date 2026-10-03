@@ -218,36 +218,44 @@ impl<'a> ThreadService<'a> {
         action: LifecycleAction,
         event: impl FnOnce(&Database) -> Result<Option<EventPayload>, DomainError>,
     ) -> Result<WorkThread, DomainError> {
-        self.database.with_transaction(|db| {
-            let mut thread = require_thread(db, id)?;
-            let next = next_state(&thread.state, action)?;
-            if next.accepts_evidence() {
-                ensure_no_other_live_thread(db, Some(&thread.id))?;
-            }
-
-            let now = Utc::now();
-            let ended_at = match (action, &next) {
-                (LifecycleAction::Resume, ThreadState::Resumed) => None,
-                (LifecycleAction::End | LifecycleAction::Archive, _) => {
-                    thread.ended_at.or(Some(now))
-                }
-                _ => thread.ended_at,
-            };
-            db.update_thread_state(&thread.id, &thread.state, &next, ended_at, now)?;
-            if let Some(payload) = event(db)? {
-                db.insert_event(&ThreadEvent::new(
-                    thread.id.clone(),
-                    payload,
-                    Sensitivity::Normal,
-                )?)?;
-            }
-
-            thread.state = next;
-            thread.ended_at = ended_at;
-            thread.updated_at = now;
-            Ok(thread)
-        })
+        self.database
+            .with_transaction(|db| apply_transition(db, id, action, event))
     }
+}
+
+/// Moves a thread to its next state and records the optional event. Runs
+/// inside the caller's transaction so a larger operation can include it.
+pub(crate) fn apply_transition(
+    db: &Database,
+    id: &ThreadId,
+    action: LifecycleAction,
+    event: impl FnOnce(&Database) -> Result<Option<EventPayload>, DomainError>,
+) -> Result<WorkThread, DomainError> {
+    let mut thread = require_thread(db, id)?;
+    let next = next_state(&thread.state, action)?;
+    if next.accepts_evidence() {
+        ensure_no_other_live_thread(db, Some(&thread.id))?;
+    }
+
+    let now = Utc::now();
+    let ended_at = match (action, &next) {
+        (LifecycleAction::Resume, ThreadState::Resumed) => None,
+        (LifecycleAction::End | LifecycleAction::Archive, _) => thread.ended_at.or(Some(now)),
+        _ => thread.ended_at,
+    };
+    db.update_thread_state(&thread.id, &thread.state, &next, ended_at, now)?;
+    if let Some(payload) = event(db)? {
+        db.insert_event(&ThreadEvent::new(
+            thread.id.clone(),
+            payload,
+            Sensitivity::Normal,
+        )?)?;
+    }
+
+    thread.state = next;
+    thread.ended_at = ended_at;
+    thread.updated_at = now;
+    Ok(thread)
 }
 
 fn snapshot_payload(canonical_root: &str) -> Result<serde_json::Value, DomainError> {
@@ -273,7 +281,7 @@ fn require_project(db: &Database, id: &ProjectId) -> Result<(), DomainError> {
         .ok_or_else(|| DomainError::not_found("The selected project is not approved."))
 }
 
-fn require_thread(db: &Database, id: &ThreadId) -> Result<WorkThread, DomainError> {
+pub(crate) fn require_thread(db: &Database, id: &ThreadId) -> Result<WorkThread, DomainError> {
     db.find_thread(id)?
         .ok_or_else(|| DomainError::not_found("That thread no longer exists."))
 }

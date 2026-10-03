@@ -447,6 +447,39 @@ impl Database {
             .map_err(storage_error)
     }
 
+    /// Every event of a thread, oldest first.
+    pub fn list_all_events(&self, thread_id: &ThreadId) -> Result<Vec<ThreadEvent>, DomainError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id, thread_id, timestamp, payload_json, sensitivity, content_hash
+                 FROM events WHERE thread_id = ?1 ORDER BY timestamp, id",
+            )
+            .map_err(storage_error)?;
+        statement
+            .query_map([&thread_id.0], event_from_row)
+            .map_err(storage_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage_error)
+    }
+
+    /// Newest first.
+    pub fn list_checkpoints(&self, thread_id: &ThreadId) -> Result<Vec<Checkpoint>, DomainError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id, thread_id, start_event_id, end_event_id, status, model_id,
+                        prompt_version, payload_json, draft_json, approved_json, created_at, approved_at
+                 FROM checkpoints WHERE thread_id = ?1 ORDER BY created_at DESC, id DESC",
+            )
+            .map_err(storage_error)?;
+        statement
+            .query_map([&thread_id.0], checkpoint_from_row)
+            .map_err(storage_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage_error)
+    }
+
     pub fn insert_correction(&self, correction: &Correction) -> Result<(), DomainError> {
         let before = serde_json::to_string(&correction.before).map_err(json_error)?;
         let after = serde_json::to_string(&correction.after).map_err(json_error)?;
@@ -522,7 +555,7 @@ fn checkpoint_from_row(row: &Row<'_>) -> rusqlite::Result<Checkpoint> {
     })
 }
 
-fn event_type(payload: &EventPayload) -> &'static str {
+pub(crate) fn event_type(payload: &EventPayload) -> &'static str {
     match payload {
         EventPayload::ThreadStarted { .. } => "thread.started",
         EventPayload::ThreadPaused { .. } => "thread.paused",

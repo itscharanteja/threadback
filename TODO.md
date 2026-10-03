@@ -59,15 +59,15 @@
 **Deliverable:** Wrapped commands, labelled notes, and Git evidence form a durable, inspectable checkpoint without network access.
 
 - [x] E-03 Implement `tb run -- <command> [args...]` with exit-code forwarding.
-- [ ] E-04 Bound stdout/stderr and retain head/tail truncation metadata.
-- [ ] C-03 Select, deduplicate, budget, and persist the checkpoint evidence interval.
+- [x] E-04 Bound stdout/stderr and retain head/tail truncation metadata.
+- [x] C-03 Select, deduplicate, budget, and persist the checkpoint evidence interval.
 - [ ] U-02 Build the active-thread timeline, notes, pause, end, and **Save My Place** workflow.
 - [ ] R-02b Complete the resettable command, failure, hypothesis, and drift paths in the fixture.
 
 ### Gate G2 — Explicit evidence
 
-- [ ] `tb run` records only for an active thread inside its approved project.
-- [ ] The child process receives literal arguments and its exit code is preserved.
+- [x] `tb run` records only for an active thread inside its approved project.
+- [x] The child process receives literal arguments and its exit code is preserved.
 - [ ] Large output remains bounded and visibly marked as truncated.
 - [ ] **Save My Place** finishes offline in under two seconds on demo data.
 - [ ] The checkpoint survives restart and remains inspectable without a model.

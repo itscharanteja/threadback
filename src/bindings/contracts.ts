@@ -97,6 +97,30 @@ export type CommandFinishedPayload = { startedEventId: EventId,
  */
 exitCode: number | null, signal: number | null, durationMs: number, stdout: OutputExcerpt, stderr: OutputExcerpt, };
 
+export type CheckpointTrigger = "manual" | "idle_suggestion" | "thread_ended";
+
+export type SnapshotStatus = { captured: boolean, eventId: EventId | null, 
+/**
+ * Why no snapshot was taken, in words the user can read.
+ */
+reason: string | null, };
+
+export type CheckpointEntry = { eventId: EventId, timestamp: string, 
+/**
+ * The event type, such as `note.added` or `command.finished`.
+ */
+kind: string, content: JsonValue, };
+
+export type Omissions = { duplicatesRemoved: number, overBudgetRemoved: number, notesShortened: number, unreadable: number, };
+
+export type CheckpointPayload = { version: number, threadTitle: string, goal: string, trigger: CheckpointTrigger, startEventId: EventId, endEventId: EventId, 
+/**
+ * Events in the interval before selection.
+ */
+intervalEventCount: number, finalSnapshot: SnapshotStatus, entries: Array<CheckpointEntry>, omissions: Omissions, totalChars: number, };
+
+export type CheckpointRequestedPayload = { checkpointId: CheckpointId, trigger: CheckpointTrigger, startEventId: EventId, endEventId: EventId, };
+
 export type RecoveryReport = { threadId: ThreadId, threadTitle: string, 
 /**
  * Timestamp of the last acknowledged event, which starts the gap.

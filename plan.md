@@ -488,9 +488,27 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - `tb` never creates the database. If the app has not run yet, the command runs unrecorded.
 - The working directory is stored relative to the project root, and the environment is never recorded.
 - `command.finished` links to its start event, so a start without a finish is visible (for example, when the thread was paused mid-command or `tb` was killed).
-- Output is passed to the terminal in full but stored as a bounded head and tail excerpt (4 KiB and 8 KiB per stream by default) with original and omitted byte counts. Binary output is counted but never stored. Configurable limits and the large-output hardening belong to E-04.
+- Output is passed to the terminal in full but stored as a bounded head and tail excerpt (4 KiB and 8 KiB per stream by default) with original and omitted byte counts. Binary output is counted but never stored. See the output limits below.
 - The app and `tb` share one database path from `threadback_core::database_path()` (`THREADBACK_DB` overrides it).
 - Known limits: the command sees pipes instead of a terminal, so tools may drop colour and progress bars, and commands are not redacted until C-01 lands, so stored command text and output are unredacted on this computer. Nothing leaves the computer before the payload preview exists.
+
+### Output limits (E-04)
+
+- Limits are set per run with `tb run --head-bytes <n> --tail-bytes <n> -- <command>` or the environment variables `THREADBACK_HEAD_BYTES` and `THREADBACK_TAIL_BYTES`; flags override the environment. Options are read only before the command, so a command's own `--head-bytes` is left alone. An invalid value stops `tb` with exit code 2 before the command runs.
+- Each limit is at most 64 KiB (`MAX_CAPTURE_BYTES`). The ceiling is enforced inside the capture itself, so no caller can make stored evidence unbounded. Zero is allowed, which keeps only sizes.
+- Each stored excerpt records `originalBytes`, `omittedBytes`, `truncated`, and `binary`, and the head and tail always add up to the original size minus the omitted bytes. The exit status is recorded independently of the output.
+- The queue between the pipe readers and the writer is bounded, so a slow terminal slows the command down instead of growing memory. The terminal still receives all output.
+- Verified with 100 MB on stdout and 20 MB on stderr at once: all bytes reached the terminal, stored evidence stayed under 40 KB, and the exit code and the final lines of each stream were kept.
+- Per-project defaults wait for policy storage (U-05).
+
+### Offline checkpoint (C-03)
+
+- `CheckpointService::save` is Save My Place. It needs no network: it takes a final Git snapshot when the thread is recording (if Git fails, or the thread is paused, the checkpoint is still saved and records why there is no final snapshot), selects the evidence since the previous checkpoint, stores a local `draft`, records `checkpoint.requested`, and moves the thread to `CHECKPOINT_DRAFT`, all in one transaction.
+- The interval starts after the previous checkpoint's last event (or at the thread start) and ends at the final snapshot, so a resumed thread's second checkpoint covers only new evidence.
+- Selection is deterministic: identical Git snapshots collapse to the latest and identical notes to the first; the budget is 150 entries and 48,000 characters. When over budget it drops other snapshots first, then routine commands, then failures and gaps. The thread start, every note, and the final snapshot are never dropped, and a command's start and finish are dropped together. `omissions` counts everything left out. Notes are shortened only if the never-dropped entries alone exceed the budget.
+- Each entry keeps its source `eventId`, so later claims stay traceable. Command output is condensed to the first 1,000 and last 3,000 characters.
+- Redaction and the included/excluded/blocked classification are not applied here; they come with C-01 and C-02 when the outbound payload is built from these entries.
+- The desktop "End thread" command now saves a checkpoint (trigger `thread_ended`) instead of only changing state, so a closed thread always has a draft to review.
 
 ### Project approval (U-01)
 

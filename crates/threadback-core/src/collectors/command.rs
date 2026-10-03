@@ -19,6 +19,13 @@ use crate::{
 
 pub const DEFAULT_HEAD_BYTES: usize = 4 * 1024;
 pub const DEFAULT_TAIL_BYTES: usize = 8 * 1024;
+/// The most that may be kept from either end of one stream, however the
+/// limits are configured. This is what keeps stored evidence bounded.
+pub const MAX_CAPTURE_BYTES: usize = 64 * 1024;
+/// Chunks that may wait between a pipe reader and the writer. A full queue
+/// makes the reader wait, so a slow terminal slows the child down instead of
+/// growing memory.
+const QUEUED_CHUNKS: usize = 64;
 const READ_CHUNK_BYTES: usize = 16 * 1024;
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 /// How long to keep draining output after the child exits, in case a
@@ -71,6 +78,25 @@ pub struct CaptureLimits {
     pub tail_bytes: usize,
 }
 
+impl CaptureLimits {
+    /// Validates user-supplied limits. Zero is allowed: a stream can keep only
+    /// its head, only its tail, or just its size.
+    pub fn new(head_bytes: usize, tail_bytes: usize) -> Result<Self, DomainError> {
+        for (name, value) in [("head-bytes", head_bytes), ("tail-bytes", tail_bytes)] {
+            if value > MAX_CAPTURE_BYTES {
+                return Err(DomainError::invalid_input(
+                    format!("{name} can be at most {MAX_CAPTURE_BYTES}."),
+                    name,
+                ));
+            }
+        }
+        Ok(Self {
+            head_bytes,
+            tail_bytes,
+        })
+    }
+}
+
 impl Default for CaptureLimits {
     fn default() -> Self {
         Self {
@@ -91,7 +117,13 @@ pub struct OutputCapture {
 }
 
 impl OutputCapture {
+    /// Limits above `MAX_CAPTURE_BYTES` are lowered to it, so no caller can
+    /// make storage unbounded.
     pub fn new(limits: CaptureLimits) -> Self {
+        let limits = CaptureLimits {
+            head_bytes: limits.head_bytes.min(MAX_CAPTURE_BYTES),
+            tail_bytes: limits.tail_bytes.min(MAX_CAPTURE_BYTES),
+        };
         Self {
             limits,
             head: Vec::new(),
@@ -406,7 +438,7 @@ fn execute(
         after_spawn();
     }
 
-    let (sender, receiver) = mpsc::channel::<(Stream, Vec<u8>)>();
+    let (sender, receiver) = mpsc::sync_channel::<(Stream, Vec<u8>)>(QUEUED_CHUNKS);
     spawn_reader(child.stdout.take(), Stream::Stdout, sender.clone());
     spawn_reader(child.stderr.take(), Stream::Stderr, sender);
 
@@ -462,7 +494,7 @@ fn finish(
 fn spawn_reader<R: Read + Send + 'static>(
     source: Option<R>,
     stream: Stream,
-    sender: mpsc::Sender<(Stream, Vec<u8>)>,
+    sender: mpsc::SyncSender<(Stream, Vec<u8>)>,
 ) {
     let Some(mut source) = source else { return };
     thread::spawn(move || {
@@ -572,6 +604,43 @@ mod tests {
         assert_eq!(excerpt.head, "abcd");
         assert_eq!(excerpt.tail, "");
         assert_eq!(excerpt.omitted_bytes, 4);
+    }
+
+    #[test]
+    fn configured_limits_are_validated() {
+        assert!(CaptureLimits::new(0, 0).is_ok());
+        assert!(CaptureLimits::new(MAX_CAPTURE_BYTES, MAX_CAPTURE_BYTES).is_ok());
+        let error = CaptureLimits::new(MAX_CAPTURE_BYTES + 1, 10).unwrap_err();
+        assert_eq!(error.field.as_deref(), Some("head-bytes"));
+        let error = CaptureLimits::new(10, MAX_CAPTURE_BYTES + 1).unwrap_err();
+        assert_eq!(error.field.as_deref(), Some("tail-bytes"));
+    }
+
+    #[test]
+    fn oversized_limits_cannot_make_storage_unbounded() {
+        let mut capture = OutputCapture::new(CaptureLimits {
+            head_bytes: usize::MAX,
+            tail_bytes: usize::MAX,
+        });
+        capture.push(&vec![b'a'; 1_000_000]);
+        let excerpt = capture.finish();
+        assert_eq!(excerpt.head.len(), MAX_CAPTURE_BYTES);
+        assert_eq!(excerpt.tail.len(), MAX_CAPTURE_BYTES);
+        assert_eq!(excerpt.original_bytes, 1_000_000);
+        assert_eq!(
+            excerpt.omitted_bytes,
+            1_000_000 - 2 * MAX_CAPTURE_BYTES as u64
+        );
+        assert!(excerpt.truncated);
+    }
+
+    #[test]
+    fn size_only_capture_still_reports_what_was_dropped() {
+        let excerpt = capture((0, 0), &[b"twelve bytes"]);
+        assert_eq!((excerpt.head.as_str(), excerpt.tail.as_str()), ("", ""));
+        assert_eq!(excerpt.original_bytes, 12);
+        assert_eq!(excerpt.omitted_bytes, 12);
+        assert!(excerpt.truncated);
     }
 
     #[test]

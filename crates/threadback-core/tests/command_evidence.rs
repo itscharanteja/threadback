@@ -533,3 +533,164 @@ fn the_environment_is_never_recorded() {
         .collect();
     assert!(!everything.contains("super-secret-value"));
 }
+
+/// Discards what it is given but counts it, so a test can push gigabytes
+/// through without holding them.
+#[derive(Default)]
+struct CountingSink {
+    bytes: u64,
+    delay_each_write: Option<Duration>,
+}
+
+impl std::io::Write for CountingSink {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        if let Some(delay) = self.delay_each_write {
+            std::thread::sleep(delay);
+        }
+        self.bytes += buffer.len() as u64;
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn run_counting(
+    f: &Fixture,
+    script: &str,
+    limits: CaptureLimits,
+    stdout: &mut CountingSink,
+    stderr: &mut CountingSink,
+) -> RunOutcome {
+    let mut notify = |message: &str| panic!("unexpected notice: {message}");
+    run_command(
+        Some(&f.db),
+        &CommandRequest {
+            program: "sh".into(),
+            args: vec!["-c".into(), script.into()],
+            cwd: f.project.path().to_path_buf(),
+            limits,
+        },
+        RunIo {
+            stdout,
+            stderr,
+            notify: &mut notify,
+            after_spawn: None,
+        },
+    )
+    .unwrap()
+}
+
+#[test]
+fn huge_output_on_both_streams_keeps_storage_bounded_and_the_exit_status() {
+    let f = fixture();
+    let (mut out, mut err) = (CountingSink::default(), CountingSink::default());
+    let started = Instant::now();
+    let outcome = run_counting(
+        &f,
+        "head -c 100000000 /dev/zero | tr '\\0' o & \
+         head -c 20000000 /dev/zero | tr '\\0' e >&2 & \
+         wait; echo FINAL-STDOUT-LINE; echo FINAL-STDERR-LINE >&2; exit 3",
+        CaptureLimits::default(),
+        &mut out,
+        &mut err,
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(60),
+        "took {:?}",
+        started.elapsed()
+    );
+
+    // The terminal received everything; only storage is bounded.
+    assert_eq!(out.bytes, 100_000_000 + "FINAL-STDOUT-LINE\n".len() as u64);
+    assert_eq!(err.bytes, 20_000_000 + "FINAL-STDERR-LINE\n".len() as u64);
+
+    // The exit status is not lost.
+    assert_eq!(outcome.exit_code, 3);
+    let (_, finished) = command_events(&f.db, &f.thread_id);
+    assert_eq!(finished[0].exit_code, Some(3));
+
+    // Truncation is explicit, exact, and keeps the end of the output.
+    for (excerpt, expected_total, last_line) in [
+        (&finished[0].stdout, 100_000_000 + 18, "FINAL-STDOUT-LINE\n"),
+        (&finished[0].stderr, 20_000_000 + 18, "FINAL-STDERR-LINE\n"),
+    ] {
+        assert!(excerpt.truncated);
+        assert_eq!(excerpt.original_bytes, expected_total);
+        assert_eq!(
+            excerpt.head.len() as u64 + excerpt.tail.len() as u64 + excerpt.omitted_bytes,
+            expected_total
+        );
+        assert!(excerpt.tail.ends_with(last_line));
+    }
+
+    // Stored evidence stays small however much was written.
+    let stored: usize = events(&f.db, &f.thread_id)
+        .iter()
+        .map(|event| serde_json::to_string(event).unwrap().len())
+        .sum();
+    assert!(stored < 40 * 1024, "stored {stored} bytes");
+}
+
+#[test]
+fn a_slow_consumer_loses_nothing_and_does_not_change_the_capture() {
+    let f = fixture();
+    let mut out = CountingSink {
+        delay_each_write: Some(Duration::from_millis(1)),
+        ..CountingSink::default()
+    };
+    let mut err = CountingSink::default();
+    let outcome = run_counting(
+        &f,
+        "head -c 3000000 /dev/zero | tr '\\0' s; echo done >&2",
+        CaptureLimits::default(),
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(outcome.exit_code, 0);
+    assert_eq!(out.bytes, 3_000_000);
+    let (_, finished) = command_events(&f.db, &f.thread_id);
+    assert_eq!(finished[0].stdout.original_bytes, 3_000_000);
+    assert_eq!(finished[0].stderr.head, "done\n");
+}
+
+#[test]
+fn limits_above_the_ceiling_are_lowered_not_trusted() {
+    let f = fixture();
+    let (mut out, mut err) = (CountingSink::default(), CountingSink::default());
+    run_counting(
+        &f,
+        "head -c 1000000 /dev/zero | tr '\\0' x",
+        CaptureLimits {
+            head_bytes: usize::MAX,
+            tail_bytes: usize::MAX,
+        },
+        &mut out,
+        &mut err,
+    );
+    let (_, finished) = command_events(&f.db, &f.thread_id);
+    let stdout = &finished[0].stdout;
+    assert_eq!(stdout.head.len(), threadback_core::MAX_CAPTURE_BYTES);
+    assert_eq!(stdout.tail.len(), threadback_core::MAX_CAPTURE_BYTES);
+    assert!(stdout.truncated);
+}
+
+#[test]
+fn output_that_fits_is_stored_whole_and_not_marked_truncated() {
+    let f = fixture();
+    let (mut out, mut err) = (CountingSink::default(), CountingSink::default());
+    // Exactly head + tail bytes: nothing has to be dropped.
+    run_counting(
+        &f,
+        "head -c 12 /dev/zero | tr '\\0' z",
+        CaptureLimits::new(4, 8).unwrap(),
+        &mut out,
+        &mut err,
+    );
+    let (_, finished) = command_events(&f.db, &f.thread_id);
+    let stdout = &finished[0].stdout;
+    assert_eq!(format!("{}{}", stdout.head, stdout.tail), "zzzzzzzzzzzz");
+    assert!(!stdout.truncated);
+    assert_eq!(stdout.omitted_bytes, 0);
+}
