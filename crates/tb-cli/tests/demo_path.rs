@@ -108,6 +108,26 @@ impl Demo {
         tb(&self.database, &self.workspace, &full, env)
     }
 
+    /// The credential must not be in any byte the database wrote, including
+    /// the write-ahead log, nor any 8-character piece of it.
+    fn assert_secret_not_on_disk(&self) {
+        let mut bytes = Vec::new();
+        for suffix in ["", "-wal", "-shm"] {
+            if let Ok(content) = std::fs::read(format!("{}{suffix}", self.database.display())) {
+                bytes.extend(content);
+            }
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        let chars: Vec<char> = FAKE_SECRET.chars().collect();
+        for window in chars.windows(8) {
+            let piece: String = window.iter().collect();
+            assert!(
+                !text.contains(&piece),
+                "{piece:?} of the fake secret is in the database files"
+            );
+        }
+    }
+
     fn finished(&self) -> Vec<serde_json::Value> {
         self.db()
             .list_all_events(&self.thread_id)
@@ -171,6 +191,21 @@ fn the_demo_path_from_failing_test_to_drift() {
         terminal.contains(FAKE_SECRET),
         "the fixture must emit its fake secret"
     );
+
+    // The credential reached the terminal but is not in the database, which
+    // holds a marker instead.
+    let stored = demo.finished();
+    assert!(
+        stored[0]["stdout"]["head"]
+            .as_str()
+            .unwrap()
+            .contains("[REDACTED:bearer-token]")
+    );
+    assert_eq!(
+        stored[0]["stdout"]["redactions"], 2,
+        "the fixture prints the credential twice"
+    );
+    demo.assert_secret_not_on_disk();
 
     // 4. Change the retry middleware and rerun: the same failure.
     demo.step("attempt-fix");
@@ -242,6 +277,11 @@ fn the_demo_path_from_failing_test_to_drift() {
     );
     assert_eq!(last.content["unstaged"]["additions"], 1);
     let final_snapshot: GitSnapshot = serde_json::from_value(last.content.clone()).unwrap();
+    assert!(
+        !checkpoint.payload.to_string().contains("nbf_demo"),
+        "the checkpoint holds no credential"
+    );
+    demo.assert_secret_not_on_disk();
 
     // 10. While the user is away the repository changes: branch, HEAD, status.
     demo.step("drift");

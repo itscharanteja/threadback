@@ -8,6 +8,10 @@ use crate::{
     EventPayload, Project, ProjectId, Sensitivity, ThreadEvent, ThreadId, ThreadState, WorkThread,
 };
 
+/// Bump whenever the redaction rules change, so the next open re-scrubs
+/// everything already stored.
+const REDACTION_VERSION: &str = "1";
+
 const MIGRATION_0001: &str = include_str!("../../../../src-tauri/migrations/0001_initial.sql");
 
 pub struct Database {
@@ -27,6 +31,7 @@ impl Database {
             .map_err(storage_error)?;
         let database = Self { connection };
         database.migrate()?;
+        database.scrub_if_needed()?;
         Ok(database)
     }
 
@@ -38,6 +43,144 @@ impl Database {
         let database = Self { connection };
         database.migrate()?;
         Ok(database)
+    }
+
+    /// Rewrites rows stored before the current redaction rules existed, once
+    /// per rules version. SQLite keeps replaced bytes in freed pages and in
+    /// the write-ahead log, so after a change the log is truncated and the
+    /// file vacuumed.
+    fn scrub_if_needed(&self) -> Result<(), DomainError> {
+        let changed = self.with_transaction(|db| {
+            let current: Option<String> = db
+                .connection
+                .query_row(
+                    "SELECT value FROM metadata WHERE key = 'redaction_version'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(storage_error)?;
+            if current.as_deref() == Some(REDACTION_VERSION) {
+                return Ok(0);
+            }
+            let changed = db.scrub_stored_rows()?;
+            db.connection
+                .execute(
+                    "INSERT INTO metadata (key, value) VALUES ('redaction_version', ?1)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    [REDACTION_VERSION],
+                )
+                .map_err(storage_error)?;
+            Ok(changed)
+        })?;
+        if changed > 0 {
+            self.connection
+                .execute_batch(
+                    "PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);",
+                )
+                .map_err(storage_error)?;
+        }
+        Ok(())
+    }
+
+    /// Returns how many rows changed.
+    fn scrub_stored_rows(&self) -> Result<usize, DomainError> {
+        use crate::privacy::{Redactor, redact_value, sanitize_payload};
+        let redactor = Redactor::builtin();
+        let mut changed = 0;
+
+        let events: Vec<(String, String, String)> = {
+            let mut statement = self
+                .connection
+                .prepare("SELECT id, payload_json, sensitivity FROM events")
+                .map_err(storage_error)?;
+            statement
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .map_err(storage_error)?
+                .collect::<rusqlite::Result<_>>()
+                .map_err(storage_error)?
+        };
+        for (id, payload_json, sensitivity) in events {
+            let Ok(payload) = serde_json::from_str::<EventPayload>(&payload_json) else {
+                continue;
+            };
+            let Some((payload, secrets)) = sanitize_payload(&payload)? else {
+                continue;
+            };
+            let sensitivity = if secrets > 0 && sensitivity == "normal" {
+                "sensitive".to_owned()
+            } else {
+                sensitivity
+            };
+            self.connection
+                .execute(
+                    "UPDATE events SET payload_json = ?1, sensitivity = ?2, content_hash = ?3 WHERE id = ?4",
+                    params![
+                        serde_json::to_string(&payload).map_err(json_error)?,
+                        sensitivity,
+                        crate::domain::hash_payload(&payload)?,
+                        id,
+                    ],
+                )
+                .map_err(storage_error)?;
+            changed += 1;
+        }
+
+        let threads: Vec<(String, String, String)> = {
+            let mut statement = self
+                .connection
+                .prepare("SELECT id, title, goal FROM work_threads")
+                .map_err(storage_error)?;
+            statement
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .map_err(storage_error)?
+                .collect::<rusqlite::Result<_>>()
+                .map_err(storage_error)?
+        };
+        for (id, title, goal) in threads {
+            let (new_title, new_goal) = (redactor.redact(&title).text, redactor.redact(&goal).text);
+            if new_title != title || new_goal != goal {
+                self.connection
+                    .execute(
+                        "UPDATE work_threads SET title = ?1, goal = ?2 WHERE id = ?3",
+                        params![new_title, new_goal, id],
+                    )
+                    .map_err(storage_error)?;
+                changed += 1;
+            }
+        }
+
+        for column in ["payload_json", "draft_json", "approved_json"] {
+            let rows: Vec<(String, String)> = {
+                let mut statement = self
+                    .connection
+                    .prepare(&format!(
+                        "SELECT id, {column} FROM checkpoints WHERE {column} IS NOT NULL"
+                    ))
+                    .map_err(storage_error)?;
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                    .map_err(storage_error)?
+                    .collect::<rusqlite::Result<_>>()
+                    .map_err(storage_error)?
+            };
+            for (id, json) in rows {
+                let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&json) else {
+                    continue;
+                };
+                if redact_value(redactor, &mut value).is_empty() {
+                    continue;
+                }
+                self.connection
+                    .execute(
+                        &format!("UPDATE checkpoints SET {column} = ?1 WHERE id = ?2"),
+                        params![serde_json::to_string(&value).map_err(json_error)?, id],
+                    )
+                    .map_err(storage_error)?;
+                changed += 1;
+            }
+        }
+        Ok(changed)
     }
 
     pub fn migrate(&self) -> Result<(), DomainError> {
@@ -162,6 +305,9 @@ impl Database {
             ));
         }
 
+        let redactor = crate::privacy::Redactor::builtin();
+        let title = redactor.redact(&thread.title).text;
+        let goal = redactor.redact(&thread.goal).text;
         self.connection
             .execute(
                 "INSERT INTO work_threads
@@ -170,8 +316,8 @@ impl Database {
                 params![
                     thread.id.0,
                     thread.project_id.0,
-                    thread.title,
-                    thread.goal,
+                    title,
+                    goal,
                     state_to_str(&thread.state),
                     thread.started_at.to_rfc3339(),
                     thread.ended_at.map(|value| value.to_rfc3339()),
@@ -301,7 +447,11 @@ impl Database {
             .map_err(storage_error)
     }
 
+    /// Every event is redacted here as a last line of defence, so no
+    /// credential reaches the database however the event was built.
     pub fn insert_event(&self, event: &ThreadEvent) -> Result<(), DomainError> {
+        let redacted = event.redacted()?;
+        let event = redacted.as_ref().unwrap_or(event);
         let payload = serde_json::to_string(&event.payload).map_err(json_error)?;
         self.connection
             .execute(
@@ -690,6 +840,96 @@ mod tests {
             },
             sensitivity: Sensitivity::Normal,
             content_hash: format!("hash-{text}"),
+        }
+    }
+
+    #[test]
+    fn rows_stored_before_redaction_are_scrubbed_from_the_file_on_open() {
+        let path =
+            std::env::temp_dir().join(format!("threadback-scrub-{}.db", uuid::Uuid::new_v4()));
+        let secret = "nbf_demo_7F4A91C2_DO_NOT_SEND";
+        let thread_id;
+        {
+            let db = Database::open(&path).unwrap();
+            let project = project();
+            db.insert_project(&project).unwrap();
+            let thread = thread(project.id);
+            thread_id = thread.id.clone();
+            db.insert_thread(&thread).unwrap();
+            // A row as an older version would have written it: no redaction.
+            let payload = format!(
+                r#"{{"type":"note_added","payload":{{"text":"Authorization: Bearer {secret}","label":"fact"}}}}"#
+            );
+            db.connection
+                .execute(
+                    "INSERT INTO events (id, thread_id, event_type, timestamp, payload_json, sensitivity, content_hash)
+                     VALUES ('legacy', ?1, 'note.added', '2026-01-01T00:00:00+00:00', ?2, 'normal', 'old-hash')",
+                    params![thread_id.0, payload],
+                )
+                .unwrap();
+            db.connection
+                .execute(
+                    "UPDATE work_threads SET goal = ?1 WHERE id = ?2",
+                    params![format!("why does {secret} fail"), thread_id.0],
+                )
+                .unwrap();
+            // Pretend this database predates the scrub.
+            db.connection
+                .execute("DELETE FROM metadata WHERE key = 'redaction_version'", [])
+                .unwrap();
+        }
+        let on_disk = |path: &std::path::Path| {
+            let mut bytes = Vec::new();
+            for suffix in ["", "-wal"] {
+                if let Ok(content) = std::fs::read(format!("{}{suffix}", path.display())) {
+                    bytes.extend(content);
+                }
+            }
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        assert!(
+            on_disk(&path).contains(secret),
+            "the legacy row really holds the secret"
+        );
+
+        let db = Database::open(&path).unwrap();
+        let events = db.list_events(&thread_id, None, 10).unwrap().events;
+        let legacy = events.iter().find(|event| event.id.0 == "legacy").unwrap();
+        assert!(
+            matches!(&legacy.payload, EventPayload::NoteAdded { text, .. }
+            if text == "Authorization: Bearer [REDACTED:bearer-token]")
+        );
+        assert_eq!(legacy.sensitivity, Sensitivity::Sensitive);
+        assert_ne!(legacy.content_hash, "old-hash");
+        assert_eq!(
+            db.find_thread(&thread_id).unwrap().unwrap().goal,
+            "why does [REDACTED:api-token] fail"
+        );
+        drop(db);
+        let remaining = on_disk(&path);
+        assert!(
+            !remaining.contains(secret),
+            "the secret is still in the database files"
+        );
+        assert!(
+            !remaining.contains("7F4A91C2"),
+            "a piece of the secret is still in the database files"
+        );
+
+        // Opening again does nothing further.
+        let db = Database::open(&path).unwrap();
+        let version: String = db
+            .connection
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'redaction_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, REDACTION_VERSION);
+        drop(db);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
         }
     }
 

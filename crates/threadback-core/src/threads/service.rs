@@ -68,12 +68,13 @@ impl<'a> ThreadService<'a> {
             require_project(db, &input.project_id)?;
             ensure_no_other_live_thread(db, None)?;
 
+            let redactor = crate::privacy::Redactor::builtin();
             let now = Utc::now();
             let thread = WorkThread {
                 id: ThreadId::new(),
                 project_id: input.project_id.clone(),
-                title: input.title.trim().into(),
-                goal: input.goal.trim().into(),
+                title: redactor.redact(input.title.trim()).text,
+                goal: redactor.redact(input.goal.trim()).text,
                 state: ThreadState::Active,
                 started_at: now,
                 ended_at: None,

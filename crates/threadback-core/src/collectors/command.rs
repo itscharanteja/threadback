@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::{
-    Database, DomainError, EventId, EventPayload, ProjectBoundary, Sensitivity, ThreadId,
-    ThreadService,
+    Database, DomainError, EventId, EventPayload, ProjectBoundary, Sensitivity, StreamRedactor,
+    ThreadId, ThreadService,
 };
 
 pub const DEFAULT_HEAD_BYTES: usize = 4 * 1024;
@@ -70,6 +70,9 @@ pub struct OutputExcerpt {
     pub truncated: bool,
     /// Binary output is counted but never stored.
     pub binary: bool,
+    /// Credentials replaced in this stream before it was stored.
+    #[serde(default)]
+    pub redactions: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,8 +115,12 @@ pub struct OutputCapture {
     limits: CaptureLimits,
     head: Vec<u8>,
     tail: Vec<u8>,
+    /// Bytes offered to `push_redacted`: the text that could have been kept.
     total: u64,
+    /// Bytes the command actually wrote, before redaction.
+    raw_total: u64,
     saw_nul: bool,
+    redactions: u32,
 }
 
 impl OutputCapture {
@@ -129,11 +136,30 @@ impl OutputCapture {
             head: Vec::new(),
             tail: Vec::new(),
             total: 0,
+            raw_total: 0,
             saw_nul: false,
+            redactions: 0,
         }
     }
 
+    /// Adds output that needs no redaction.
     pub fn push(&mut self, chunk: &[u8]) {
+        self.count_raw(chunk.len());
+        self.push_redacted(chunk);
+    }
+
+    /// Counts bytes the command wrote. The size reported as
+    /// `originalBytes` is this, not the size of the redacted text.
+    pub fn count_raw(&mut self, bytes: usize) {
+        self.raw_total += bytes as u64;
+    }
+
+    pub fn set_redactions(&mut self, count: u32) {
+        self.redactions = count;
+    }
+
+    /// Adds already-redacted text, which is what head and tail are cut from.
+    pub fn push_redacted(&mut self, chunk: &[u8]) {
         self.total += chunk.len() as u64;
         self.saw_nul |= chunk.contains(&0);
 
@@ -163,10 +189,11 @@ impl OutputCapture {
             return OutputExcerpt {
                 head: String::new(),
                 tail: String::new(),
-                original_bytes: self.total,
+                original_bytes: self.raw_total,
                 omitted_bytes: self.total,
                 truncated: self.total > 0,
                 binary: true,
+                redactions: self.redactions,
             };
         }
 
@@ -186,10 +213,11 @@ impl OutputCapture {
         OutputExcerpt {
             head: String::from_utf8_lossy(head).into_owned(),
             tail: String::from_utf8_lossy(tail).into_owned(),
-            original_bytes: self.total,
+            original_bytes: self.raw_total,
             omitted_bytes: self.total - shown,
             truncated,
             binary: false,
+            redactions: self.redactions,
         }
     }
 }
@@ -335,10 +363,17 @@ pub fn run_command(
             stdout: executed.stdout,
             stderr: executed.stderr,
         };
+        // Output that had credentials replaced is marked, so it is never
+        // mistaken for ordinary evidence.
+        let sensitivity = if finished.stdout.redactions + finished.stderr.redactions > 0 {
+            Sensitivity::Sensitive
+        } else {
+            Sensitivity::Normal
+        };
         match service.record(
             thread_id,
             EventPayload::CommandFinished(to_value(&finished)?),
-            Sensitivity::Normal,
+            sensitivity,
         ) {
             Ok(event) => outcome.finished_event_id = Some(event.id),
             Err(error) => notify(&format!("result not recorded: {}", error.message)),
@@ -396,9 +431,9 @@ fn execute(
     stderr: &mut dyn Write,
     after_spawn: Option<Box<dyn FnOnce() + '_>>,
 ) -> Executed {
-    let mut captures: HashMap<Stream, OutputCapture> = HashMap::from([
-        (Stream::Stdout, OutputCapture::new(request.limits)),
-        (Stream::Stderr, OutputCapture::new(request.limits)),
+    let mut captures: HashMap<Stream, StreamCapture> = HashMap::from([
+        (Stream::Stdout, StreamCapture::new(request.limits)),
+        (Stream::Stderr, StreamCapture::new(request.limits)),
     ]);
     let started = Instant::now();
 
@@ -430,7 +465,7 @@ fn execute(
             captures
                 .get_mut(&Stream::Stderr)
                 .expect("present")
-                .push(message.as_bytes());
+                .push_raw(message.as_bytes());
             return finish(Some(code), None, started, captures);
         }
     };
@@ -452,7 +487,7 @@ fn execute(
                     Stream::Stdout => stdout.write_all(&chunk).and_then(|_| stdout.flush()),
                     Stream::Stderr => stderr.write_all(&chunk).and_then(|_| stderr.flush()),
                 };
-                captures.get_mut(&stream).expect("present").push(&chunk);
+                captures.get_mut(&stream).expect("present").push_raw(&chunk);
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -476,11 +511,40 @@ fn execute(
     finish(code, signal, started, captures)
 }
 
+/// One output stream on its way to storage: redacted line by line first, then
+/// cut to a head and a tail. The terminal never sees this copy.
+struct StreamCapture {
+    redactor: StreamRedactor,
+    capture: OutputCapture,
+}
+
+impl StreamCapture {
+    fn new(limits: CaptureLimits) -> Self {
+        Self {
+            redactor: StreamRedactor::new(),
+            capture: OutputCapture::new(limits),
+        }
+    }
+
+    fn push_raw(&mut self, chunk: &[u8]) {
+        self.capture.count_raw(chunk.len());
+        let redacted = self.redactor.push(chunk);
+        self.capture.push_redacted(&redacted);
+    }
+
+    fn finish(mut self) -> OutputExcerpt {
+        let rest = self.redactor.finish();
+        self.capture.push_redacted(&rest);
+        self.capture.set_redactions(self.redactor.redactions());
+        self.capture.finish()
+    }
+}
+
 fn finish(
     exit_code: Option<i32>,
     signal: Option<i32>,
     started: Instant,
-    mut captures: HashMap<Stream, OutputCapture>,
+    mut captures: HashMap<Stream, StreamCapture>,
 ) -> Executed {
     Executed {
         exit_code,

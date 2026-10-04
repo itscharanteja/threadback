@@ -214,30 +214,61 @@ pub struct ThreadEvent {
 }
 
 impl ThreadEvent {
-    /// Builds an event stamped now, hashing the serialized payload.
+    /// Builds an event stamped now. Credentials in the payload are replaced
+    /// before the content hash is computed, so neither the stored text nor
+    /// its hash depends on a secret.
     pub fn new(
         thread_id: ThreadId,
         payload: EventPayload,
         sensitivity: Sensitivity,
     ) -> Result<Self, crate::DomainError> {
-        use sha2::{Digest, Sha256};
-
-        let serialized = serde_json::to_vec(&payload).map_err(|error| {
-            crate::DomainError::internal(format!("Local JSON serialization failed: {error}"))
-        })?;
-        let content_hash = Sha256::digest(&serialized)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        Ok(Self {
+        let content_hash = hash_payload(&payload)?;
+        let event = Self {
             id: EventId::new(),
             thread_id,
             timestamp: Utc::now(),
             payload,
             sensitivity,
             content_hash,
-        })
+        };
+        Ok(event.redacted()?.unwrap_or(event))
     }
+
+    /// The same event with credentials and home paths replaced, or `None`
+    /// when there was nothing to replace. An event that had a credential is
+    /// marked `Sensitive`. The storage layer applies this to every event it
+    /// writes, whatever built the event.
+    pub(crate) fn redacted(&self) -> Result<Option<Self>, crate::DomainError> {
+        let Some((payload, secrets)) = crate::privacy::sanitize_payload(&self.payload)? else {
+            return Ok(None);
+        };
+        let content_hash = hash_payload(&payload)?;
+        let sensitivity = if secrets > 0 && self.sensitivity == Sensitivity::Normal {
+            Sensitivity::Sensitive
+        } else {
+            self.sensitivity.clone()
+        };
+        Ok(Some(Self {
+            id: self.id.clone(),
+            thread_id: self.thread_id.clone(),
+            timestamp: self.timestamp,
+            payload,
+            sensitivity,
+            content_hash,
+        }))
+    }
+}
+
+pub(crate) fn hash_payload(payload: &EventPayload) -> Result<String, crate::DomainError> {
+    use sha2::{Digest, Sha256};
+
+    let serialized = serde_json::to_vec(payload).map_err(|error| {
+        crate::DomainError::internal(format!("Local JSON serialization failed: {error}"))
+    })?;
+    Ok(Sha256::digest(&serialized)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

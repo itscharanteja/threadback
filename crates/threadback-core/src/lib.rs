@@ -3,6 +3,7 @@ pub mod collectors;
 pub mod domain;
 pub mod error;
 pub mod paths;
+pub mod privacy;
 pub mod projects;
 pub mod storage;
 pub mod threads;
@@ -20,6 +21,7 @@ pub use collectors::{
 pub use domain::*;
 pub use error::{DomainError, ErrorCode};
 pub use paths::database_path;
+pub use privacy::{Finding, FindingKind, Redaction, Redactor, StreamRedactor};
 pub use projects::approve_project;
 pub use storage::Database;
 pub use threads::{

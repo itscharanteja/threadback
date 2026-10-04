@@ -3503,6 +3503,8 @@ name = "threadback-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "memchr",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

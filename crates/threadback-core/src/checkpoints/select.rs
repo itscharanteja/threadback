@@ -465,6 +465,7 @@ mod tests {
             omitted_bytes: 0,
             truncated: false,
             binary: false,
+            redactions: 0,
         }
     }
 
@@ -815,6 +816,7 @@ mod tests {
                 omitted_bytes: 4_999_992,
                 truncated: true,
                 binary: false,
+                redactions: 0,
             },
             stderr: OutputExcerpt {
                 head: String::new(),
@@ -823,6 +825,7 @@ mod tests {
                 omitted_bytes: 9,
                 truncated: true,
                 binary: true,
+                redactions: 0,
             },
         };
         events.push(EventPayload::CommandFinished(
