@@ -492,6 +492,29 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - The app and `tb` share one database path from `threadback_core::database_path()` (`THREADBACK_DB` overrides it).
 - Known limits: the command sees pipes instead of a terminal, so tools may drop colour and progress bars, and commands are not redacted until C-01 lands, so stored command text and output are unredacted on this computer. Nothing leaves the computer before the payload preview exists.
 
+### Demo fixture (R-02b)
+
+- `npm run demo:reset` recreates `fixtures/demo-repo/workspace` (or a folder passed as an argument) with fixed author, committer, and dates, so the seeded commit hash is identical every time.
+- The defect: a capture that times out after the provider accepted it is redelivered to a second worker, and the two workers are configured with separate lock backends. The retry middleware looks like the cause but never retries a timeout, so changing it does not change the result.
+- Terminal output from the focused test contains the fake credential, which exercises the secret-blocking path once redaction exists. `LOCK_DEBUG=1` logs which backend each worker uses (the lock-owner diagnostic), and `npm run test:lock` is the success check.
+- `npm run demo:attempt-fix`, `demo:revert-fix`, and `demo:drift` apply the failed attempt, undo it, and change the branch, HEAD, and working tree while the user is away. Drift edits a file the investigation did not touch, so branch, HEAD, and status all differ in the demo flow.
+- `npm run test:noisy` prints about 1 MB and fails on the last line, for the large-output case.
+- `crates/tb-cli/tests/demo_path.rs` runs this path through the real `tb` binary and the checkpoint service. `fixtures/demo-repo/DEMO.md` is the human script.
+
+### Active-thread workflow (U-02)
+
+- The thread screen shows the goal, state in words, the controls that apply to that state, a labelled-note form, and the evidence timeline.
+  - Recording: Save My Place, Pause, Take Git snapshot, End thread.
+  - Paused: Resume, End thread.
+  - Checkpoint draft: the saved draft is shown and nothing can be added.
+- Notes: no label is pre-selected, so every note's kind is an explicit choice; text is sent exactly as typed. The form is disabled, with an explanation, whenever the thread is not recording. Ctrl or ⌘ + Enter adds the note.
+- End thread asks for confirmation first, because it stops recording and saves a checkpoint.
+- While a thread is recording, the evidence refreshes every 2 seconds, so commands run with `tb` appear on screen. Nothing is polled when the thread is not recording.
+- The checkpoint draft view shows what was saved with no model or network: trigger, evidence count, whether the final Git snapshot was taken (and why not), what was left out, and the condensed evidence. It states that nothing has been sent anywhere.
+- Actions announce their result in a polite live region, and focus moves to the checkpoint heading after Save My Place or End.
+- UI tests (`npm run test:ui`, part of `npm run check`) run the screens against an in-memory fake of the Rust commands. They verify the screen's behavior, not the Rust rules themselves, which have their own tests.
+- Still open: a saved draft cannot yet be discarded to return to work.
+
 ### Output limits (E-04)
 
 - Limits are set per run with `tb run --head-bytes <n> --tail-bytes <n> -- <command>` or the environment variables `THREADBACK_HEAD_BYTES` and `THREADBACK_TAIL_BYTES`; flags override the environment. Options are read only before the command, so a command's own `--head-bytes` is left alone. An invalid value stops `tb` with exit code 2 before the command runs.
