@@ -54,8 +54,65 @@ export class FakeBackend {
     return this.thread.state === "ACTIVE" || this.thread.state === "RESUMED";
   }
 
-  failNext(command: string, message: string, field: string | null = null) {
-    this.failures.set(command, failure("INVALID_STATE", message, field));
+  failNext(command: string, message: string, field: string | null = null, code = "INVALID_STATE") {
+    this.failures.set(command, failure(code, message, field));
+  }
+
+  /** Adds an entry to the newest checkpoint draft, such as a kind that must stay local. */
+  addCheckpointEntry(entry: { eventId: string; kind: string; content: Record<string, unknown> }) {
+    const payload = this.checkpoints[0].payload as any;
+    payload.entries.push({ ...entry, timestamp: new Date().toISOString() });
+  }
+
+  private previewFor(checkpointId: string, excluded: string[]) {
+    const checkpoint = this.checkpoints.find((candidate) => candidate.id === checkpointId)!;
+    const payload = checkpoint.payload as any;
+    const sendable = ["thread.started", "note.added", "git.snapshot", "command.started", "command.finished"];
+    const entries = payload.entries.map((entry: any) => {
+      let disposition = "included";
+      let reason: string | null = null;
+      let value = entry.content;
+      const text = String(entry.content?.text ?? "");
+      if (!sendable.includes(entry.kind)) {
+        disposition = "local_only";
+        reason = "This kind of evidence is never sent.";
+      } else if (excluded.includes(entry.eventId)) {
+        disposition = "excluded";
+        reason = "Excluded by you.";
+      } else if (text.includes("ACME-")) {
+        disposition = "blocked";
+        reason = "Contains text matching one of your custom patterns that would be sent. Exclude this entry to continue.";
+        value = { ...entry.content, text: text.replace(/ACME-\d+/g, "[REDACTED:custom]") };
+      }
+      return {
+        eventId: entry.eventId,
+        timestamp: entry.timestamp,
+        kind: entry.kind,
+        disposition,
+        value,
+        sizeBytes: JSON.stringify(value).length,
+        reason,
+        findings: [],
+      };
+    });
+    const included = entries.filter((entry: any) => entry.disposition === "included");
+    const count = (name: string) => entries.filter((entry: any) => entry.disposition === name).length;
+    const payloadJson = JSON.stringify({ goal: payload.goal, entries: included.map((e: any) => ({ eventId: e.eventId, content: e.value })) });
+    return {
+      checkpointId,
+      threadTitle: payload.threadTitle,
+      goal: payload.goal,
+      trigger: payload.trigger,
+      finalSnapshot: payload.finalSnapshot,
+      entries,
+      counts: { included: included.length, excluded: count("excluded"), blocked: count("blocked"), localOnly: count("local_only") },
+      notices: [],
+      totalSizeBytes: payloadJson.length,
+      payloadJson,
+      payloadHash: `hash:${included.map((e: any) => e.eventId).join("+")}`.padEnd(64, "0"),
+      hasBlockingFindings: count("blocked") > 0,
+      canGenerate: count("blocked") === 0 && included.length > 0,
+    };
   }
 
   callsTo(command: string) {
@@ -191,6 +248,23 @@ export class FakeBackend {
         return this.saveCheckpoint("manual");
       case "checkpoints_list":
         return this.checkpoints;
+      case "checkpoints_preview":
+        return this.previewFor(args.checkpointId, args.excludedEventIds ?? []);
+      case "checkpoints_generate": {
+        const preview = this.previewFor(args.checkpointId, args.excludedEventIds ?? []);
+        if (preview.hasBlockingFindings) throw failure("PAYLOAD_BLOCKED", "Something in this payload contains a credential.");
+        if (preview.counts.included === 0) throw failure("PAYLOAD_BLOCKED", "Nothing is selected to send. Include at least one entry.");
+        if (preview.payloadHash !== args.reviewedHash) throw failure("PAYLOAD_CHANGED", "What would be sent has changed since you reviewed it. Review it again.");
+        throw failure("NOT_CONFIGURED", "The model connection is not set up yet. Nothing was sent.");
+      }
+      case "checkpoints_discard": {
+        const checkpoint = this.checkpoints.find((candidate) => candidate.id === args.checkpointId)!;
+        if (checkpoint.status !== "draft") throw failure("INVALID_STATE", "Only a draft that has not been used can be discarded.");
+        checkpoint.status = "discarded";
+        this.add({ type: "checkpoint_discarded", payload: { checkpointId: checkpoint.id } } as any);
+        this.setState("ACTIVE");
+        return this.thread;
+      }
       default:
         throw new Error(`Unexpected command ${command}`);
     }

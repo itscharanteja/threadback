@@ -475,6 +475,61 @@ code {
   font-size: 0.85em;
 }
 
+.preview-entries {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preview-entry {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.preview-entry > * + * {
+  margin-top: 6px;
+}
+
+.preview-blocked {
+  border-color: var(--danger);
+  border-width: 2px;
+}
+
+.preview-excluded,
+.preview-local_only {
+  opacity: 0.8;
+}
+
+.entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.entry-head input {
+  width: 18px;
+  height: 18px;
+}
+
+.entry-state {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.summary-line {
+  font-weight: 600;
+}
+
+button[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .output summary {
   cursor: pointer;
   font-size: 0.9rem;

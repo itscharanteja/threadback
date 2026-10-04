@@ -1,11 +1,19 @@
 import { forwardRef } from "react";
 import type { Checkpoint, CheckpointPayload } from "../bindings/contracts";
 import { TRIGGER_LABELS, entryItems, formatTime, pluralize } from "../lib/format";
+import { DiscardDraftControl } from "./DiscardDraftControl";
 import { Timeline } from "./Timeline";
 
+interface CheckpointDraftViewProps {
+  checkpoint: Checkpoint;
+  onReview: () => void;
+  onDiscard: () => Promise<void>;
+  busy: boolean;
+}
+
 /** A saved checkpoint, readable with no model or network. */
-export const CheckpointDraftView = forwardRef<HTMLHeadingElement, { checkpoint: Checkpoint }>(
-  function CheckpointDraftView({ checkpoint }, headingRef) {
+export const CheckpointDraftView = forwardRef<HTMLHeadingElement, CheckpointDraftViewProps>(
+  function CheckpointDraftView({ checkpoint, onReview, onDiscard, busy }, headingRef) {
     const payload = checkpoint.payload as unknown as CheckpointPayload;
     const { omissions, finalSnapshot } = payload;
     const leftOut: string[] = [];
@@ -54,9 +62,15 @@ export const CheckpointDraftView = forwardRef<HTMLHeadingElement, { checkpoint: 
         <Timeline items={entryItems(payload.entries)} label="Checkpoint evidence, oldest first" />
 
         <p className="hint">
-          Turning this draft into a resume capsule needs the model connection, which is not set up yet. This
-          draft is your saved place until then.
+          Turning this draft into a resume capsule needs the model. You will see exactly what would be sent
+          first, and nothing is sent until you confirm.
         </p>
+        <div className="actions" role="group" aria-label="Draft actions">
+          <button type="button" className="primary" onClick={onReview}>
+            Review what will be sent…
+          </button>
+          <DiscardDraftControl onConfirm={onDiscard} busy={busy} />
+        </div>
       </section>
     );
   },

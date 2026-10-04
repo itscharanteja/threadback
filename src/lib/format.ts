@@ -72,6 +72,10 @@ export function summarizeEvent(event: ThreadEvent): EventSummary {
       return { kind: "Resumed", text: "Recording resumed." };
     case "git_snapshot":
       return summarizeSnapshot(entry.payload as unknown as GitSnapshot);
+    case "checkpoint_discarded":
+      return { kind: "Draft discarded", text: "A checkpoint draft was discarded and recording resumed." };
+    case "checkpoint_requested":
+      return { kind: "Checkpoint saved", text: "A checkpoint draft was saved." };
     case "command_started": {
       const started = entry.payload as unknown as CommandStartedPayload;
       return { kind: "Command", text: started.command, detail: `Run in ${started.cwd}` };
@@ -98,7 +102,7 @@ function describeExit(finished: { exitCode: number | null; signal: number | null
   return `ended by signal ${finished.signal ?? "unknown"}`;
 }
 
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

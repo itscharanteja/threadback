@@ -137,6 +137,31 @@ pub fn checkpoints_preview(
     OutboundService::new(&*database(&state)?).prepare(&checkpoint_id, &excluded_event_ids)
 }
 
+/// Asks for a capsule from the payload the user reviewed. The payload is
+/// authorized again here, so a blocked or changed payload is refused.
+#[tauri::command]
+pub fn checkpoints_generate(
+    checkpoint_id: CheckpointId,
+    excluded_event_ids: Vec<EventId>,
+    reviewed_hash: String,
+    state: State<'_, AppState>,
+) -> Result<(), DomainError> {
+    OutboundService::new(&*database(&state)?).generate(
+        &checkpoint_id,
+        &excluded_event_ids,
+        &reviewed_hash,
+    )
+}
+
+/// Throws a checkpoint draft away and returns the thread to recording.
+#[tauri::command]
+pub fn checkpoints_discard(
+    checkpoint_id: CheckpointId,
+    state: State<'_, AppState>,
+) -> Result<WorkThread, DomainError> {
+    CheckpointService::new(&*database(&state)?).discard(&checkpoint_id)
+}
+
 #[tauri::command]
 pub fn checkpoints_get(
     checkpoint_id: CheckpointId,

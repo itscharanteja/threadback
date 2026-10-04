@@ -32,7 +32,7 @@ export type AddNoteInput = { text: string, label: NoteLabel, };
 
 export type WorkThread = { id: ThreadId, projectId: ProjectId, title: string, goal: string, state: ThreadState, startedAt: string, endedAt: string | null, createdAt: string, updatedAt: string, };
 
-export type EventPayload = { "type": "thread_started", "payload": { goal: string, hypothesis: string | null, } } | { "type": "thread_paused", "payload": { reason: string, } } | { "type": "thread_resumed", "payload": { prior_checkpoint_id: CheckpointId | null, } } | { "type": "git_snapshot", "payload": JsonValue } | { "type": "file_changed", "payload": JsonValue } | { "type": "command_started", "payload": JsonValue } | { "type": "command_finished", "payload": JsonValue } | { "type": "note_added", "payload": { text: string, label: NoteLabel, } } | { "type": "checkpoint_requested", "payload": JsonValue } | { "type": "checkpoint_generated", "payload": JsonValue } | { "type": "checkpoint_approved", "payload": JsonValue };
+export type EventPayload = { "type": "thread_started", "payload": { goal: string, hypothesis: string | null, } } | { "type": "thread_paused", "payload": { reason: string, } } | { "type": "thread_resumed", "payload": { prior_checkpoint_id: CheckpointId | null, } } | { "type": "git_snapshot", "payload": JsonValue } | { "type": "file_changed", "payload": JsonValue } | { "type": "command_started", "payload": JsonValue } | { "type": "command_finished", "payload": JsonValue } | { "type": "note_added", "payload": { text: string, label: NoteLabel, } } | { "type": "checkpoint_requested", "payload": JsonValue } | { "type": "checkpoint_generated", "payload": JsonValue } | { "type": "checkpoint_approved", "payload": JsonValue } | { "type": "checkpoint_discarded", "payload": JsonValue };
 
 export type ThreadEvent = { id: EventId, threadId: ThreadId, timestamp: string, payload: EventPayload, sensitivity: Sensitivity, contentHash: string, };
 
@@ -183,6 +183,10 @@ notices: Array<string>,
  * Size of everything that would be sent.
  */
 totalSizeBytes: number, 
+/**
+ * The exact JSON document that would be sent, as serialized.
+ */
+payloadJson: string, 
 /**
  * Identifies exactly what would be sent. Approval must present it back.
  */

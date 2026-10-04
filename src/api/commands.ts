@@ -95,6 +95,16 @@ export const checkpoints = {
     return invoke<Checkpoint>("checkpoints_get", { checkpointId });
   },
 
+  /** Asks for a capsule from the reviewed payload. Refused if it is blocked or has changed. */
+  generate(checkpointId: CheckpointId, excludedEventIds: EventId[], reviewedHash: string): Promise<void> {
+    return invoke<void>("checkpoints_generate", { checkpointId, excludedEventIds, reviewedHash });
+  },
+
+  /** Throws a draft away and returns the thread to recording. */
+  discard(checkpointId: CheckpointId): Promise<WorkThread> {
+    return invoke<WorkThread>("checkpoints_discard", { checkpointId });
+  },
+
   /** What would be sent, with the excluded entries left out. Sends nothing. */
   preview(checkpointId: CheckpointId, excludedEventIds: EventId[] = []): Promise<PayloadPreview> {
     return invoke<PayloadPreview>("checkpoints_preview", { checkpointId, excludedEventIds });

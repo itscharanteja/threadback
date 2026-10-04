@@ -85,6 +85,15 @@ describe("summarizeEvent", () => {
   });
 });
 
+describe("checkpoint events", () => {
+  it("describes a discarded draft and a saved checkpoint in words", () => {
+    expect(summarizeEvent(event({ type: "checkpoint_discarded", payload: {} }))).toMatchObject({
+      kind: "Draft discarded",
+    });
+    expect(summarizeEvent(event({ type: "checkpoint_requested", payload: {} })).kind).toBe("Checkpoint saved");
+  });
+});
+
 describe("summarizeEntry", () => {
   it("renders a condensed note with its label", () => {
     expect(summarizeEntry(entry("note.added", { label: "hypothesis", text: "maybe the lock" }))).toMatchObject({

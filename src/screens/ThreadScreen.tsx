@@ -4,6 +4,7 @@ import { checkpoints as checkpointsApi, events as eventsApi, threads as threadsA
 import { toDomainError } from "../api/errors";
 import { CheckpointDraftView } from "../components/CheckpointDraftView";
 import { NoteForm } from "../components/NoteForm";
+import { PayloadPreviewPanel } from "../components/PayloadPreviewPanel";
 import { Timeline } from "../components/Timeline";
 import { STATE_DISPLAY, eventItems, formatTime, isRecording, pluralize } from "../lib/format";
 
@@ -30,7 +31,9 @@ export function ThreadScreen({ thread, project, onChanged, refreshMs = LIVE_REFR
   const [actionError, setActionError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [confirmingEnd, setConfirmingEnd] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const draftHeading = useRef<HTMLHeadingElement>(null);
+  const previewHeading = useRef<HTMLHeadingElement>(null);
   const confirmHeading = useRef<HTMLHeadingElement>(null);
   const focusDraftNext = useRef(false);
 
@@ -77,7 +80,7 @@ export function ThreadScreen({ thread, project, onChanged, refreshMs = LIVE_REFR
     }
     checkpointsApi
       .list(thread.id)
-      .then((list) => setCheckpoint(list[0] ?? null))
+      .then((list) => setCheckpoint(list.find((candidate) => candidate.status !== "discarded") ?? null))
       .catch((failure) => setLoadError(toDomainError(failure).message));
   }, [showsDraft, thread.id, thread.updatedAt]);
 
@@ -91,6 +94,15 @@ export function ThreadScreen({ thread, project, onChanged, refreshMs = LIVE_REFR
   useEffect(() => {
     if (confirmingEnd) confirmHeading.current?.focus();
   }, [confirmingEnd]);
+
+  useEffect(() => {
+    if (reviewing) previewHeading.current?.focus();
+  }, [reviewing]);
+
+  // Leaving the drafting states ends any review.
+  useEffect(() => {
+    if (!showsDraft) setReviewing(false);
+  }, [showsDraft]);
 
   async function perform(name: string, work: () => Promise<unknown>, success: string) {
     setBusy(name);
@@ -117,6 +129,13 @@ export function ThreadScreen({ thread, project, onChanged, refreshMs = LIVE_REFR
     setConfirmingEnd(false);
     focusDraftNext.current = true;
     return perform("end", () => threadsApi.end(thread.id), "Thread ended and checkpoint saved.");
+  };
+
+  const discardDraft = async () => {
+    if (!checkpoint) return;
+    await perform("discard", () => checkpointsApi.discard(checkpoint.id), "Draft discarded. Recording has resumed.");
+    setReviewing(false);
+    document.getElementById("screen-title")?.focus();
   };
 
   const state = STATE_DISPLAY[thread.state];
@@ -206,7 +225,29 @@ export function ThreadScreen({ thread, project, onChanged, refreshMs = LIVE_REFR
         </p>
       ) : null}
 
-      {showsDraft && checkpoint ? <CheckpointDraftView ref={draftHeading} checkpoint={checkpoint} /> : null}
+      {showsDraft && checkpoint ? (
+        reviewing ? (
+          <PayloadPreviewPanel
+            ref={previewHeading}
+            checkpoint={checkpoint}
+            busy={disabled}
+            onCancel={() => {
+              focusDraftNext.current = true;
+              setReviewing(false);
+              draftHeading.current?.focus();
+            }}
+            onDiscard={discardDraft}
+          />
+        ) : (
+          <CheckpointDraftView
+            ref={draftHeading}
+            checkpoint={checkpoint}
+            busy={disabled}
+            onReview={() => setReviewing(true)}
+            onDiscard={discardDraft}
+          />
+        )
+      ) : null}
 
       <NoteForm
         recording={recording}

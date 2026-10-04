@@ -20,6 +20,8 @@ fn main() {
             commands::checkpoints_list,
             commands::checkpoints_get,
             commands::checkpoints_preview,
+            commands::checkpoints_generate,
+            commands::checkpoints_discard,
             commands::events_list,
             commands::events_add_note,
             commands::events_capture_git,
