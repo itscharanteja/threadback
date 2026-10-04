@@ -16,6 +16,20 @@ pub enum ErrorCode {
     NotConfigured,
     /// The model's reply did not meet the capsule contract, even after one correction.
     InvalidModelOutput,
+    /// The model service rejected the API key.
+    ModelAuthentication,
+    ModelRateLimited,
+    /// The model service could not be reached.
+    ModelNetwork,
+    ModelTimeout,
+    /// The model service failed or sent something unreadable.
+    ModelServer,
+    /// The model service refused the request (bad model, unsupported option).
+    ModelRejected,
+    /// The user cancelled.
+    Cancelled,
+    /// The macOS Keychain could not be used.
+    SecretStore,
     StorageUnavailable,
     Internal,
 }
@@ -100,6 +114,20 @@ impl DomainError {
             retryable: true,
             field: None,
         }
+    }
+
+    /// A failure of the model service, with a code the interface can act on.
+    pub fn model(code: ErrorCode, message: impl Into<String>, retryable: bool) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            retryable,
+            field: None,
+        }
+    }
+
+    pub fn secret_store(message: impl Into<String>) -> Self {
+        Self::model(ErrorCode::SecretStore, message, false)
     }
 
     pub fn storage(message: impl Into<String>) -> Self {

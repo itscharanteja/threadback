@@ -261,24 +261,6 @@ impl<'a> OutboundService<'a> {
         ))
     }
 
-    /// Asks for a capsule to be generated from the reviewed payload. The
-    /// reviewed payload is authorized first, so a blocked, empty, or changed
-    /// payload is refused here whatever the caller does.
-    ///
-    /// The model connection is not built yet, so a payload that passes every
-    /// check ends in `NOT_CONFIGURED` and nothing is sent.
-    pub fn generate(
-        &self,
-        checkpoint_id: &CheckpointId,
-        excluded: &[EventId],
-        reviewed_hash: &str,
-    ) -> Result<(), DomainError> {
-        let _approved = self.authorize(checkpoint_id, excluded, reviewed_hash)?;
-        Err(DomainError::not_configured(
-            "The model connection is not set up yet. Nothing was sent.",
-        ))
-    }
-
     fn assemble(
         &self,
         checkpoint_id: &CheckpointId,

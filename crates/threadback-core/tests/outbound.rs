@@ -7,10 +7,11 @@ use std::fs;
 use chrono::Utc;
 use tempfile::TempDir;
 use threadback_core::{
-    AddNoteInput, ApprovedPayload, CaptureLimits, Checkpoint, CheckpointId, CheckpointService,
-    CheckpointTrigger, CommandRequest, Database, ErrorCode, EventId, NoteLabel, OutboundService,
-    PayloadPreview, PreviewDisposition, Project, ProjectId, Redactor, RunIo, StartThreadInput,
-    ThreadId, ThreadService, run_command,
+    AddNoteInput, ApprovedPayload, CapsuleModel, CaptureLimits, Checkpoint, CheckpointId,
+    CheckpointService, CheckpointTrigger, CommandRequest, Database, DomainError, ErrorCode,
+    EventId, ModelReply, NoteLabel, OutboundService, PayloadPreview, PreviewDisposition, Project,
+    ProjectId, PromptRequest, Redactor, RunIo, StartThreadInput, ThreadId, ThreadService,
+    generate_draft, run_command,
 };
 
 const SECRET: &str = "nbf_demo_7F4A91C2_DO_NOT_SEND";
@@ -364,43 +365,73 @@ fn the_preview_carries_the_exact_document_and_its_hash() {
     );
 }
 
+struct Counting {
+    calls: std::cell::Cell<u32>,
+}
+
+impl CapsuleModel for Counting {
+    fn complete(&self, _: &PromptRequest) -> Result<ModelReply, DomainError> {
+        self.calls.set(self.calls.get() + 1);
+        Err(DomainError::not_configured(
+            "The model connection is not set up yet. Nothing was sent.",
+        ))
+    }
+}
+
+fn ask(
+    f: &Fixture,
+    id: &CheckpointId,
+    excluded: &[EventId],
+    hash: &str,
+    model: &Counting,
+) -> Result<Checkpoint, DomainError> {
+    let redactor = custom();
+    generate_draft(&f.db, id, excluded, hash, &redactor, model, "test-model")
+}
+
 #[test]
-fn generation_is_gated_before_anything_else() {
+fn generation_is_gated_before_the_model_is_ever_called() {
     let f = fixture();
     note(&f, "fine", NoteLabel::Fact);
     let culprit = note(&f, "ACME-123456", NoteLabel::Hypothesis);
     let checkpoint = save(&f);
     let redactor = custom();
     let service = OutboundService::with_redactor(&f.db, &redactor);
+    let model = Counting {
+        calls: std::cell::Cell::new(0),
+    };
 
-    // Blocked: refused as blocked, never reaching the connection.
+    // Blocked: refused as blocked.
     let blocked = service.prepare(&checkpoint.id, &[]).unwrap();
-    let error = service
-        .generate(&checkpoint.id, &[], &blocked.payload_hash)
-        .unwrap_err();
+    let error = ask(&f, &checkpoint.id, &[], &blocked.payload_hash, &model).unwrap_err();
+    assert_eq!(error.code, ErrorCode::PayloadBlocked);
+
+    // The reviewed selection, but a different one is being sent: also blocked.
+    let reviewed = service.prepare(&checkpoint.id, &[culprit.clone()]).unwrap();
+    let error = ask(&f, &checkpoint.id, &[], &reviewed.payload_hash, &model).unwrap_err();
     assert_eq!(error.code, ErrorCode::PayloadBlocked);
 
     // Not what was reviewed: refused as changed.
-    let reviewed = service.prepare(&checkpoint.id, &[culprit.clone()]).unwrap();
-    let error = service
-        .generate(&checkpoint.id, &[], &reviewed.payload_hash)
-        .unwrap_err();
-    assert_eq!(
-        error.code,
-        ErrorCode::PayloadBlocked,
-        "the unreviewed selection is also blocked"
-    );
-    let error = service
-        .generate(&checkpoint.id, &[culprit.clone()], "stale")
-        .unwrap_err();
+    let error = ask(&f, &checkpoint.id, &[culprit.clone()], "stale", &model).unwrap_err();
     assert_eq!(error.code, ErrorCode::PayloadChanged);
+    assert_eq!(
+        model.calls.get(),
+        0,
+        "the model was never called for a payload that did not pass"
+    );
 
-    // Reviewed and clean: reaches the connection, which does not exist yet.
-    let error = service
-        .generate(&checkpoint.id, &[culprit], &reviewed.payload_hash)
-        .unwrap_err();
+    // Reviewed and clean: only now does it reach the model.
+    let error = ask(
+        &f,
+        &checkpoint.id,
+        &[culprit],
+        &reviewed.payload_hash,
+        &model,
+    )
+    .unwrap_err();
     assert_eq!(error.code, ErrorCode::NotConfigured);
     assert!(error.message.contains("Nothing was sent"));
+    assert_eq!(model.calls.get(), 1);
 }
 
 #[test]
@@ -415,8 +446,12 @@ fn a_discarded_draft_cannot_be_previewed_or_generated() {
         service.prepare(&checkpoint.id, &[]).unwrap_err().code,
         ErrorCode::InvalidState
     );
+    let model = Counting {
+        calls: std::cell::Cell::new(0),
+    };
     assert_eq!(
-        service.generate(&checkpoint.id, &[], "x").unwrap_err().code,
+        ask(&f, &checkpoint.id, &[], "x", &model).unwrap_err().code,
         ErrorCode::InvalidState
     );
+    assert_eq!(model.calls.get(), 0);
 }

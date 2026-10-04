@@ -10,7 +10,7 @@ name = "tb"
 path = "src/main.rs"
 
 [dependencies]
-threadback-core = { path = "../threadback-core" }
+threadback-core = { path = "../threadback-core", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

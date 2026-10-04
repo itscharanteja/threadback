@@ -11,6 +11,7 @@ rust-version = "1.85"
 [workspace.dependencies]
 chrono = { version = "0.4", features = ["serde"] }
 libc = "0.2"
+keyring = { version = "3", default-features = false }
 memchr = "2"
 regex = "1"
 rusqlite = { version = "0.37", features = ["bundled"] }
@@ -19,7 +20,10 @@ serde_json = "1"
 sha2 = "0.10"
 tempfile = "3"
 thiserror = "2"
+tokio = { version = "1", default-features = false, features = ["rt", "time", "macros"] }
+url = "2"
 ts-rs = { version = "11", features = ["chrono-impl", "serde-json-impl"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 
 # The regex engine is on the path of every byte `tb` stores. Unoptimized it is

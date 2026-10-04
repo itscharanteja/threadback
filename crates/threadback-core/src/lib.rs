@@ -1,5 +1,6 @@
 pub mod checkpoints;
 pub mod collectors;
+pub mod config;
 pub mod domain;
 pub mod error;
 pub mod inference;
@@ -12,7 +13,7 @@ pub mod threads;
 
 pub use checkpoints::{
     CheckpointEntry, CheckpointPayload, CheckpointRequestedPayload, CheckpointService,
-    CheckpointTrigger, Omissions, STATUS_DISCARDED, STATUS_DRAFT, SnapshotStatus,
+    CheckpointTrigger, Omissions, STATUS_DISCARDED, STATUS_DRAFT, STATUS_GENERATED, SnapshotStatus,
 };
 pub use collectors::{
     CaptureLimits, ChangedPath, CommandFinishedPayload, CommandRequest, CommandStartedPayload,
@@ -20,13 +21,20 @@ pub use collectors::{
     ProjectBoundary, ResolvedPath, RunIo, RunOutcome, capture_snapshot, default_exclusions,
     display_command, run_command,
 };
+pub use config::{
+    ApiKey, ConfigurationService, ConfigurationStatus, ConnectionTestResult, MemorySecretStore,
+    ModelConfigInput, ModelSettings, SecretStore, StructuredOutput, default_secret_store,
+};
 pub use domain::*;
 pub use error::{DomainError, ErrorCode};
+#[cfg(feature = "model-client")]
+pub use inference::{CancelToken, TokenFactoryClient};
 pub use inference::{
     CapsuleModel, CapsuleSchema, ChatMessage, Evaluation, GeneratedCapsule, GenerationFailure,
-    InvalidOutput, MAX_VIOLATIONS, ModelReply, PROMPT_VERSION, PromptRequest, SCHEMA_VERSION,
-    SchemaIssue, ShownEntry, ValidationContext, Violation, ViolationKind, build_prompt,
-    build_repair_prompt, capsule_schema, evaluate, generate_capsule, summarize, validate_capsule,
+    GenerationPlan, InvalidOutput, MAX_VIOLATIONS, ModelCallRecord, ModelReply, PROMPT_VERSION,
+    PromptRequest, SCHEMA_VERSION, SchemaIssue, ShownEntry, ValidationContext, Violation,
+    ViolationKind, build_prompt, build_repair_prompt, capsule_schema, evaluate, finish_generation,
+    generate_capsule, generate_draft, plan_generation, run_generation, summarize, validate_capsule,
 };
 pub use outbound::{
     ApprovedPayload, OutboundEntry, OutboundInterval, OutboundPayload, OutboundService,
@@ -35,7 +43,7 @@ pub use outbound::{
 pub use paths::database_path;
 pub use privacy::{Finding, FindingKind, Redaction, Redactor, StreamRedactor};
 pub use projects::approve_project;
-pub use storage::Database;
+pub use storage::{Database, LatencySummary};
 pub use threads::{
     LifecycleAction, PauseReason, RecoveryReport, ThreadService, recover_interrupted_threads,
 };

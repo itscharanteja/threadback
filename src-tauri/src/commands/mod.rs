@@ -1,18 +1,28 @@
-use std::{fs, sync::Mutex};
+use std::{
+    fs,
+    sync::{Arc, Mutex},
+};
 
 use tauri::{App, Manager, State};
 use threadback_core::{
-    AddNoteInput, AppStatus, Checkpoint, CheckpointId, CheckpointService, CheckpointTrigger,
-    CreateProjectInput, Database, DomainError, EventId, EventPage, OutboundService, PauseReason,
-    PayloadPreview, Project, RecoveryReport, StartThreadInput, ThreadEvent, ThreadId,
-    ThreadService, WorkThread, approve_project, database_path, default_exclusions,
-    recover_interrupted_threads,
+    AddNoteInput, AppStatus, CancelToken, CapsuleModel, Checkpoint, CheckpointId,
+    CheckpointService, CheckpointTrigger, ConfigurationService, ConfigurationStatus,
+    ConnectionTestResult, CreateProjectInput, Database, DomainError, EventId, EventPage,
+    ModelConfigInput, OutboundService, PauseReason, PayloadPreview, Project, RecoveryReport,
+    Redactor, SecretStore, StartThreadInput, ThreadEvent, ThreadId, ThreadService,
+    TokenFactoryClient, WorkThread, approve_project, database_path, default_exclusions,
+    default_secret_store, finish_generation, plan_generation, recover_interrupted_threads,
+    run_generation,
 };
 
 const TIMELINE_PAGE_SIZE: u32 = 100;
 
 pub struct AppState {
-    database: Mutex<Database>,
+    database: Arc<Mutex<Database>>,
+    /// The macOS Keychain. The API key lives here and nowhere else.
+    secrets: Arc<dyn SecretStore>,
+    /// The generation in progress, so the user can cancel it.
+    generation: Arc<Mutex<Option<CancelToken>>>,
     recovery: Vec<RecoveryReport>,
 }
 
@@ -26,7 +36,9 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // Threads still recording when the app last stopped are paused and reported.
     let recovery = recover_interrupted_threads(&database)?;
     app.manage(AppState {
-        database: Mutex::new(database),
+        database: Arc::new(Mutex::new(database)),
+        secrets: Arc::from(default_secret_store()),
+        generation: Arc::new(Mutex::new(None)),
         recovery,
     });
     Ok(())
@@ -137,20 +149,119 @@ pub fn checkpoints_preview(
     OutboundService::new(&*database(&state)?).prepare(&checkpoint_id, &excluded_event_ids)
 }
 
-/// Asks for a capsule from the payload the user reviewed. The payload is
-/// authorized again here, so a blocked or changed payload is refused.
+/// Asks the model for a capsule from the payload the user reviewed.
+///
+/// The request can take a minute, so this runs on a worker thread (a plain
+/// command would run on the main thread and freeze the window) and does not
+/// hold the database while it waits. The payload is authorized again here: a
+/// blocked, empty, or changed payload is refused before anything is sent.
 #[tauri::command]
-pub fn checkpoints_generate(
+pub async fn checkpoints_generate(
     checkpoint_id: CheckpointId,
     excluded_event_ids: Vec<EventId>,
     reviewed_hash: String,
     state: State<'_, AppState>,
-) -> Result<(), DomainError> {
-    OutboundService::new(&*database(&state)?).generate(
-        &checkpoint_id,
-        &excluded_event_ids,
-        &reviewed_hash,
-    )
+) -> Result<Checkpoint, DomainError> {
+    let (database, secrets, slot) = (
+        state.database.clone(),
+        state.secrets.clone(),
+        state.generation.clone(),
+    );
+    tauri::async_runtime::spawn_blocking(move || {
+        let cancel = CancelToken::new();
+        let busy = || DomainError::internal("The local database lock is unavailable.");
+
+        // Phase 1, with the database: authorize, build the prompt, prepare the checks.
+        let (plan, client, model_id) = {
+            let guard = database.lock().map_err(|_| busy())?;
+            let plan = plan_generation(
+                &guard,
+                &checkpoint_id,
+                &excluded_event_ids,
+                &reviewed_hash,
+                Redactor::builtin(),
+            )?;
+            let configuration = ConfigurationService::new(&guard, &*secrets);
+            let model_id = configuration.settings()?.model_id;
+            let client = configuration.build_client(cancel.clone())?;
+            (plan, client, model_id)
+        };
+
+        // Phase 2, without it: the network request.
+        *slot.lock().map_err(|_| busy())? = Some(cancel);
+        let outcome = run_generation(&client, &plan);
+        let calls = client.take_diagnostics();
+        *slot.lock().map_err(|_| busy())? = None;
+
+        // Phase 3, with the database again: record the calls and store the draft.
+        let guard = database.lock().map_err(|_| busy())?;
+        finish_generation(&guard, &plan, &model_id, outcome, &calls)
+    })
+    .await
+    .map_err(|_| DomainError::internal("The generation stopped unexpectedly."))?
+}
+
+/// Stops the generation in progress, if any. Nothing more is sent.
+#[tauri::command]
+pub fn checkpoints_cancel_generation(state: State<'_, AppState>) {
+    if let Ok(mut slot) = state.generation.lock() {
+        if let Some(token) = slot.take() {
+            token.cancel();
+        }
+    }
+}
+
+#[tauri::command]
+pub fn configuration_status(
+    state: State<'_, AppState>,
+) -> Result<ConfigurationStatus, DomainError> {
+    ConfigurationService::new(&*database(&state)?, &*state.secrets).status()
+}
+
+/// Saves the model connection. The key, if one is given, goes straight to the
+/// Keychain; nothing returned from here contains it.
+#[tauri::command]
+pub fn configuration_store(
+    input: ModelConfigInput,
+    state: State<'_, AppState>,
+) -> Result<ConfigurationStatus, DomainError> {
+    ConfigurationService::new(&*database(&state)?, &*state.secrets).store(input)
+}
+
+#[tauri::command]
+pub fn configuration_remove_key(
+    state: State<'_, AppState>,
+) -> Result<ConfigurationStatus, DomainError> {
+    ConfigurationService::new(&*database(&state)?, &*state.secrets).remove_api_key()
+}
+
+/// Checks the endpoint, key, and model with one tiny request that contains
+/// none of the user's evidence. It saves nothing.
+#[tauri::command]
+pub async fn configuration_test(
+    input: ModelConfigInput,
+    state: State<'_, AppState>,
+) -> Result<ConnectionTestResult, DomainError> {
+    let (database, secrets) = (state.database.clone(), state.secrets.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        let (settings, key) = {
+            let guard = database
+                .lock()
+                .map_err(|_| DomainError::internal("The local database lock is unavailable."))?;
+            ConfigurationService::new(&guard, &*secrets).resolve_for_test(&input)?
+        };
+        let Some(key) = key else {
+            return Ok(ConnectionTestResult {
+                ok: false,
+                message: "Enter an API key first. Nothing was sent.".into(),
+                latency_ms: None,
+                model_id: settings.model_id,
+            });
+        };
+        Ok(TokenFactoryClient::new(settings, key, CancelToken::new()).test_connection())
+    })
+    .await
+    .map_err(|_| DomainError::internal("The connection test stopped unexpectedly."))?
 }
 
 /// Throws a checkpoint draft away and returns the thread to recording.

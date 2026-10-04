@@ -14,6 +14,12 @@ pub struct ModelReply {
 /// never be given anything the user did not review.
 pub trait CapsuleModel {
     fn complete(&self, request: &PromptRequest) -> Result<ModelReply, DomainError>;
+
+    /// What was recorded about the requests made so far, drained. It holds no
+    /// payload and no credentials. Models that record nothing return nothing.
+    fn take_diagnostics(&self) -> Vec<super::diagnostics::ModelCallRecord> {
+        Vec::new()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -125,6 +125,28 @@ intervalEventCount: number, finalSnapshot: SnapshotStatus, entries: Array<Checkp
 
 export type CheckpointRequestedPayload = { checkpointId: CheckpointId, trigger: CheckpointTrigger, startEventId: EventId, endEventId: EventId, };
 
+export type StructuredOutput = "json_schema" | "json_object" | "off";
+
+export type ModelSettings = { endpoint: string, modelId: string, timeoutSecs: number, structuredOutput: StructuredOutput, };
+
+export type ModelConfigInput = { endpoint: string, modelId: string, timeoutSecs: number, structuredOutput: StructuredOutput, 
+/**
+ * A new key to store. `None` keeps the stored key unchanged.
+ */
+apiKey: string | null, };
+
+export type ConfigurationStatus = { endpoint: string, modelId: string, timeoutSecs: number, structuredOutput: StructuredOutput, hasApiKey: boolean, 
+/**
+ * Where evidence would be sent.
+ */
+destinationHost: string, };
+
+export type ConnectionTestResult = { ok: boolean, 
+/**
+ * A sentence the user can act on.
+ */
+message: string, latencyMs: number | null, modelId: string, };
+
 export type RecoveryReport = { threadId: ThreadId, threadTitle: string, 
 /**
  * Timestamp of the last acknowledged event, which starts the gap.

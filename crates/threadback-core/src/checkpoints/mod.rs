@@ -19,6 +19,9 @@ pub use select::{SelectionLimits, build_payload};
 /// A checkpoint that exists only locally and has not been sent to a model.
 pub const STATUS_DRAFT: &str = "draft";
 
+/// The model has produced a capsule draft. It is kept exactly as returned.
+pub const STATUS_GENERATED: &str = "generated";
+
 /// A draft the user threw away. Its evidence is not consumed: the next
 /// checkpoint covers it again.
 pub const STATUS_DISCARDED: &str = "discarded";
@@ -221,9 +224,9 @@ impl<'a> CheckpointService<'a> {
             let checkpoint = db
                 .find_checkpoint(id)?
                 .ok_or_else(|| DomainError::not_found("That checkpoint no longer exists."))?;
-            if checkpoint.status != STATUS_DRAFT {
+            if checkpoint.status != STATUS_DRAFT && checkpoint.status != STATUS_GENERATED {
                 return Err(DomainError::invalid_state(
-                    "Only a draft that has not been used can be discarded.",
+                    "Only a draft that has not been approved can be discarded.",
                 ));
             }
             // Check the thread can resume before marking anything.

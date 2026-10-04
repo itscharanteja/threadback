@@ -13,6 +13,15 @@ use crate::{
 const REDACTION_VERSION: &str = "1";
 
 const MIGRATION_0001: &str = include_str!("../../../../src-tauri/migrations/0001_initial.sql");
+const MIGRATION_0002: &str = include_str!("../../../../src-tauri/migrations/0002_model_calls.sql");
+
+/// Latency of successful model requests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LatencySummary {
+    pub count: u32,
+    pub p50_ms: Option<u64>,
+    pub p95_ms: Option<u64>,
+}
 
 pub struct Database {
     connection: Connection,
@@ -183,9 +192,33 @@ impl Database {
         Ok(changed)
     }
 
+    /// Small non-secret settings. Secrets never go here.
+    pub(crate) fn metadata_get(&self, key: &str) -> Result<Option<String>, DomainError> {
+        self.connection
+            .query_row("SELECT value FROM metadata WHERE key = ?1", [key], |row| {
+                row.get(0)
+            })
+            .optional()
+            .map_err(storage_error)
+    }
+
+    pub(crate) fn metadata_set(&self, key: &str, value: &str) -> Result<(), DomainError> {
+        self.connection
+            .execute(
+                "INSERT INTO metadata (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![key, value],
+            )
+            .map_err(storage_error)?;
+        Ok(())
+    }
+
     pub fn migrate(&self) -> Result<(), DomainError> {
         self.connection
             .execute_batch(MIGRATION_0001)
+            .map_err(storage_error)?;
+        self.connection
+            .execute_batch(MIGRATION_0002)
             .map_err(storage_error)
     }
 
@@ -638,6 +671,118 @@ impl Database {
             )
             .map_err(storage_error)?;
         Ok(())
+    }
+
+    /// Stores the model's capsule as the checkpoint's draft, once. The draft is
+    /// never overwritten: a second write finds it already there and fails, so
+    /// the model's original output stays exactly as it came back.
+    pub fn set_checkpoint_draft(
+        &self,
+        id: &CheckpointId,
+        draft: &crate::ResumeCapsule,
+        model_id: &str,
+        prompt_version: &str,
+    ) -> Result<(), DomainError> {
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE checkpoints
+                 SET draft_json = ?1, model_id = ?2, prompt_version = ?3, status = ?4
+                 WHERE id = ?5 AND draft_json IS NULL AND status = ?6",
+                params![
+                    redacted_json(draft)?,
+                    model_id,
+                    prompt_version,
+                    crate::STATUS_GENERATED,
+                    id.0,
+                    crate::STATUS_DRAFT,
+                ],
+            )
+            .map_err(storage_error)?;
+        if changed == 0 {
+            return Err(DomainError::invalid_state(
+                "A capsule was already generated for this draft, or the draft is no longer available.",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Records one request to the model. The record has no payload field.
+    pub fn record_model_call(
+        &self,
+        checkpoint_id: Option<&CheckpointId>,
+        record: &crate::ModelCallRecord,
+    ) -> Result<(), DomainError> {
+        self.connection
+            .execute(
+                "INSERT INTO model_calls
+                 (id, checkpoint_id, at, model_id, endpoint_host, status, http_status, latency_ms,
+                  prompt_tokens, completion_tokens, total_tokens, finish_reason, structured_output, attempt)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                params![
+                    uuid::Uuid::new_v4().to_string(),
+                    checkpoint_id.map(|id| id.0.clone()),
+                    Utc::now().to_rfc3339(),
+                    record.model_id,
+                    record.endpoint_host,
+                    record.status,
+                    record.http_status,
+                    record.latency_ms as i64,
+                    record.prompt_tokens,
+                    record.completion_tokens,
+                    record.total_tokens,
+                    record.finish_reason,
+                    match record.structured_output {
+                        crate::StructuredOutput::JsonSchema => "json_schema",
+                        crate::StructuredOutput::JsonObject => "json_object",
+                        crate::StructuredOutput::Off => "off",
+                    },
+                    record.attempt,
+                ],
+            )
+            .map_err(storage_error)?;
+        Ok(())
+    }
+
+    /// How long successful requests took: the number of them and the 50th and
+    /// 95th percentile latency, for the evaluation report.
+    pub fn model_latency_summary(&self) -> Result<LatencySummary, DomainError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT latency_ms FROM model_calls WHERE status = 'ok' ORDER BY latency_ms")
+            .map_err(storage_error)?;
+        let latencies: Vec<u64> = statement
+            .query_map([], |row| row.get::<_, i64>(0))
+            .map_err(storage_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage_error)?
+            .into_iter()
+            .map(|value| value.max(0) as u64)
+            .collect();
+        let percentile = |p: f64| -> Option<u64> {
+            if latencies.is_empty() {
+                return None;
+            }
+            // Nearest rank.
+            let rank = ((p / 100.0) * latencies.len() as f64).ceil().max(1.0) as usize;
+            Some(latencies[rank.min(latencies.len()) - 1])
+        };
+        Ok(LatencySummary {
+            count: latencies.len() as u32,
+            p50_ms: percentile(50.0),
+            p95_ms: percentile(95.0),
+        })
+    }
+
+    pub fn count_model_calls(&self, checkpoint_id: &CheckpointId) -> Result<u32, DomainError> {
+        self.connection
+            .query_row(
+                "SELECT COUNT(*) FROM model_calls WHERE checkpoint_id = ?1",
+                [&checkpoint_id.0],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|count| count as u32)
+            .map_err(storage_error)
     }
 
     pub fn insert_correction(&self, correction: &Correction) -> Result<(), DomainError> {
