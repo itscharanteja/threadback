@@ -99,6 +99,8 @@ checkpoints.update(checkpointId, patch) -> CapsuleDraft
 checkpoints.approve(checkpointId) -> ApprovedCapsule
 checkpoints.getResume(checkpointId) -> ResumeViewModel
 checkpoints.preview(checkpointId, excludedEventIds) -> PayloadPreview
+checkpoints.generate(checkpointId, excludedEventIds, reviewedHash) -> void
+checkpoints.discard(checkpointId) -> WorkThread
 
 exports.markdown(checkpointId) -> FileResult
 exports.json(checkpointId) -> FileResult
@@ -519,6 +521,15 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - Every entry reports its size as sent, and the preview reports the total size and a `payloadHash` of the exact JSON document. `canGenerate` is false while anything is blocked or nothing is selected.
 - `OutboundService::authorize(checkpointId, excludedEventIds, reviewedHash)` is the only way to obtain an `ApprovedPayload`. It rebuilds the payload on the server (it never trusts content sent back by the UI) and refuses with `PAYLOAD_BLOCKED` when anything is blocked or nothing is selected, and with `PAYLOAD_CHANGED` when the hash differs from what was reviewed. The model client (M-02) will accept only an `ApprovedPayload`, so there is no route to the network that skips the preview.
 - Not done: editing entry text in the preview (the spec asks only for exclusion), and storing a project's custom patterns (U-05).
+
+### Payload preview and discarding a draft (C-04)
+
+- From a checkpoint draft, **Review what will be sent…** opens the preview. It states that nothing has been sent, lists every entry with a per-entry checkbox, shows each entry's size, state (in words and a glyph), reason, and redaction tag, and offers the exact content of each entry and the complete payload as one document with its fingerprint.
+- Looking, excluding, and cancelling send nothing. Each exclusion asks the server to recompute the payload; the screen never builds the payload itself.
+- **Generate capsule** stays focusable with `aria-disabled` and a visible reason (a blocked entry, nothing selected, or the payload still updating), so keyboard and screen-reader users can find out why. It is also refused on the server: `checkpoints.generate` authorizes the payload first (`PAYLOAD_BLOCKED`, `PAYLOAD_CHANGED`) and then, until the model connection exists (M-01 and M-02), ends in `NOT_CONFIGURED: Nothing was sent`.
+- Blocked entries show only their replaced text; entries that can never be sent are shown but cannot be selected.
+- **Discard draft and keep working** exists on both the draft and the preview, behind a confirmation. It marks the checkpoint `discarded`, records `checkpoint.discarded`, clears `ended_at`, and returns the thread to `ACTIVE`. It is refused if another thread is recording. A discarded draft consumes nothing: the next checkpoint's interval starts where the discarded one would have, and a discarded draft cannot be previewed or generated. This closes the earlier open question about leaving a draft.
+- `FAILED` also allows discarding, ready for when generation exists.
 
 ### Demo fixture (R-02b)
 
