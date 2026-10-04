@@ -123,6 +123,7 @@ export function App() {
             <ThreadScreen
               thread={shownThread}
               project={data.projects.find((project) => project.id === shownThread.projectId)}
+              onChanged={data.refresh}
             />
           ) : (
             <p className="empty" role="status">

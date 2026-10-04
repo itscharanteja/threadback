@@ -412,6 +412,64 @@ section > h2 + .cards {
   font-size: 0.9rem;
 }
 
+.labels {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.labels legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.radio {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.radio input {
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+}
+
+.facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.facts div {
+  display: grid;
+  grid-template-columns: 11rem 1fr;
+  gap: 12px;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.confirm {
+  border-color: var(--warn);
+}
+
+code {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+
 .output summary {
   cursor: pointer;
   font-size: 0.9rem;

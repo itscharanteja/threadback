@@ -1,4 +1,6 @@
 import type {
+  CheckpointEntry,
+  CheckpointTrigger,
   CommandFinishedPayload,
   CommandStartedPayload,
   GitSnapshot,
@@ -65,13 +67,7 @@ export function summarizeEvent(event: ThreadEvent): EventSummary {
         detail: entry.payload.hypothesis ? `Starting hypothesis: ${entry.payload.hypothesis}` : undefined,
       };
     case "thread_paused":
-      return {
-        kind: "Paused",
-        text:
-          entry.payload.reason === "interrupted"
-            ? "The app stopped while this thread was recording. Nothing was captured after the previous event until it was reopened."
-            : `Paused (${entry.payload.reason}).`,
-      };
+      return { kind: "Paused", text: describePause(entry.payload.reason) };
     case "thread_resumed":
       return { kind: "Resumed", text: "Recording resumed." };
     case "git_snapshot":
@@ -89,7 +85,13 @@ export function summarizeEvent(event: ThreadEvent): EventSummary {
   }
 }
 
-function describeExit(finished: CommandFinishedPayload): string {
+export function describePause(reason: string): string {
+  return reason === "interrupted"
+    ? "The app stopped while this thread was recording. Nothing was captured after the previous event until it was reopened."
+    : `Paused (${reason}).`;
+}
+
+function describeExit(finished: { exitCode: number | null; signal: number | null }): string {
   if (finished.exitCode !== null) {
     return finished.exitCode === 0 ? "succeeded (exit code 0)" : `failed (exit code ${finished.exitCode})`;
   }
@@ -128,6 +130,92 @@ function summarizeCommandFinished(finished: CommandFinishedPayload): EventSummar
     outputs,
   };
 }
+
+export const TRIGGER_LABELS: Record<CheckpointTrigger, string> = {
+  manual: "Save My Place",
+  idle_suggestion: "Inactivity suggestion",
+  thread_ended: "Thread ended",
+};
+
+interface CondensedOutput {
+  text?: string;
+  originalBytes: number;
+  truncated?: boolean;
+  binary?: boolean;
+}
+
+function condensedOutput(label: string, output: CondensedOutput | undefined) {
+  if (!output || output.originalBytes === 0) return null;
+  if (output.binary) {
+    return { label, text: "", note: `${formatBytes(output.originalBytes)} of binary output, not stored.` };
+  }
+  return {
+    label,
+    text: output.text ?? "",
+    note: output.truncated
+      ? `Shortened for the checkpoint; the original was ${formatBytes(output.originalBytes)}.`
+      : undefined,
+  };
+}
+
+/** Describes one condensed checkpoint entry. Its content is shaped differently from a raw event. */
+export function summarizeEntry(entry: CheckpointEntry): EventSummary {
+  const content = entry.content as Record<string, any>;
+  switch (entry.kind) {
+    case "thread.started":
+      return {
+        kind: "Thread started",
+        text: String(content.goal ?? ""),
+        detail: content.hypothesis ? `Starting hypothesis: ${content.hypothesis}` : undefined,
+      };
+    case "thread.paused":
+      return { kind: "Paused", text: describePause(String(content.reason ?? "")) };
+    case "thread.resumed":
+      return { kind: "Resumed", text: "Recording resumed." };
+    case "note.added":
+      return {
+        kind: NOTE_LABELS[content.label as NoteLabel] ?? "Note",
+        text: String(content.text ?? ""),
+        detail: content.shortened ? "Shortened to fit the checkpoint." : undefined,
+        preformatted: true,
+      };
+    case "git.snapshot": {
+      const summary = summarizeSnapshot(content as unknown as GitSnapshot);
+      const omitted = Number(content.omittedPaths ?? 0);
+      return omitted > 0
+        ? { ...summary, detail: `${summary.detail ?? ""} ${pluralize(omitted, "path")} left out of this checkpoint.`.trim() }
+        : summary;
+    }
+    case "command.started":
+      return { kind: "Command", text: String(content.command ?? ""), detail: `Run in ${content.cwd}` };
+    case "command.finished": {
+      const seconds = (Number(content.durationMs ?? 0) / 1000).toFixed(2);
+      const outputs = [
+        condensedOutput("Standard output", content.stdout),
+        condensedOutput("Standard error", content.stderr),
+      ].filter((output): output is NonNullable<typeof output> => output !== null);
+      return {
+        kind: "Command finished",
+        text: `${describeExit({ exitCode: content.exitCode ?? null, signal: content.signal ?? null })} after ${seconds} s`,
+        outputs,
+      };
+    }
+    default:
+      return { kind: entry.kind.replace(/[._]/g, " "), text: "Recorded." };
+  }
+}
+
+export interface TimelineItem {
+  id: string;
+  timestamp: string;
+  summary: EventSummary;
+}
+
+export const eventItems = (events: ThreadEvent[]): TimelineItem[] =>
+  events.map((event) => ({ id: event.id, timestamp: event.timestamp, summary: summarizeEvent(event) }));
+
+export const entryItems = (entries: CheckpointEntry[]): TimelineItem[] =>
+  entries.map((entry) => ({ id: entry.eventId, timestamp: entry.timestamp, summary: summarizeEntry(entry) }));
 
 function summarizeSnapshot(snapshot: GitSnapshot): EventSummary {
   const branch = snapshot.branch ?? "detached HEAD";

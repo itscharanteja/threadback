@@ -1,23 +1,43 @@
-import { useCallback, useEffect, useState } from "react";
-import type { Project, ThreadEvent, WorkThread } from "../bindings/contracts";
-import { events as eventsApi } from "../api/commands";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Checkpoint, Project, ThreadEvent, WorkThread } from "../bindings/contracts";
+import { checkpoints as checkpointsApi, events as eventsApi, threads as threadsApi } from "../api/commands";
 import { toDomainError } from "../api/errors";
+import { CheckpointDraftView } from "../components/CheckpointDraftView";
+import { NoteForm } from "../components/NoteForm";
 import { Timeline } from "../components/Timeline";
-import { STATE_DISPLAY, formatTime, pluralize } from "../lib/format";
+import { STATE_DISPLAY, eventItems, formatTime, isRecording, pluralize } from "../lib/format";
 
 const MAX_PAGES = 50;
+export const LIVE_REFRESH_MS = 2000;
 
 interface ThreadScreenProps {
   thread: WorkThread;
   project: Project | undefined;
+  /** Called after any action so the rest of the app sees the new state. */
+  onChanged: () => Promise<void> | void;
+  /** How often the evidence refreshes while the thread is recording. */
+  refreshMs?: number;
 }
 
-/** A thread's goal, state, and evidence. Controls arrive with the active-thread workflow. */
-export function ThreadScreen({ thread, project }: ThreadScreenProps) {
-  const [events, setEvents] = useState<ThreadEvent[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+const sameEvents = (a: ThreadEvent[] | null, b: ThreadEvent[]) =>
+  a !== null && a.length === b.length && a.every((event, index) => event.id === b[index].id);
 
-  const load = useCallback(async () => {
+export function ThreadScreen({ thread, project, onChanged, refreshMs = LIVE_REFRESH_MS }: ThreadScreenProps) {
+  const [events, setEvents] = useState<ThreadEvent[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [checkpoint, setCheckpoint] = useState<Checkpoint | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [status, setStatus] = useState("");
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
+  const draftHeading = useRef<HTMLHeadingElement>(null);
+  const confirmHeading = useRef<HTMLHeadingElement>(null);
+  const focusDraftNext = useRef(false);
+
+  const recording = isRecording(thread.state);
+  const showsDraft = ["CHECKPOINT_DRAFT", "FAILED", "READY"].includes(thread.state);
+
+  const loadEvents = useCallback(async () => {
     try {
       const all: ThreadEvent[] = [];
       let cursor: string | undefined;
@@ -27,19 +47,80 @@ export function ThreadScreen({ thread, project }: ThreadScreenProps) {
         if (!result.nextCursor) break;
         cursor = result.nextCursor;
       }
-      setEvents(all);
-      setError(null);
+      setEvents((previous) => (sameEvents(previous, all) ? previous : all));
+      setLoadError(null);
     } catch (failure) {
-      setError(toDomainError(failure).message);
+      setLoadError(toDomainError(failure).message);
     }
   }, [thread.id]);
 
   useEffect(() => {
     setEvents(null);
-    void load();
-  }, [load]);
+    setCheckpoint(null);
+    setConfirmingEnd(false);
+    void loadEvents();
+  }, [loadEvents]);
+
+  // Commands run through `tb` arrive while this screen is open.
+  useEffect(() => {
+    if (!recording) return;
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void loadEvents();
+    }, refreshMs);
+    return () => window.clearInterval(timer);
+  }, [recording, loadEvents, refreshMs]);
+
+  useEffect(() => {
+    if (!showsDraft) {
+      setCheckpoint(null);
+      return;
+    }
+    checkpointsApi
+      .list(thread.id)
+      .then((list) => setCheckpoint(list[0] ?? null))
+      .catch((failure) => setLoadError(toDomainError(failure).message));
+  }, [showsDraft, thread.id, thread.updatedAt]);
+
+  useEffect(() => {
+    if (checkpoint && focusDraftNext.current) {
+      focusDraftNext.current = false;
+      draftHeading.current?.focus();
+    }
+  }, [checkpoint]);
+
+  useEffect(() => {
+    if (confirmingEnd) confirmHeading.current?.focus();
+  }, [confirmingEnd]);
+
+  async function perform(name: string, work: () => Promise<unknown>, success: string) {
+    setBusy(name);
+    setActionError(null);
+    setStatus("");
+    try {
+      await work();
+      setStatus(success);
+    } catch (failure) {
+      setActionError(toDomainError(failure).message);
+    } finally {
+      // The state may have changed even when the action failed.
+      await onChanged();
+      await loadEvents();
+      setBusy(null);
+    }
+  }
+
+  const saveMyPlace = () => {
+    focusDraftNext.current = true;
+    return perform("save", () => checkpointsApi.savePlace(thread.id), "Checkpoint saved on this computer.");
+  };
+  const endThread = () => {
+    setConfirmingEnd(false);
+    focusDraftNext.current = true;
+    return perform("end", () => threadsApi.end(thread.id), "Thread ended and checkpoint saved.");
+  };
 
   const state = STATE_DISPLAY[thread.state];
+  const disabled = busy !== null;
 
   return (
     <>
@@ -50,6 +131,20 @@ export function ThreadScreen({ thread, project }: ThreadScreenProps) {
         <span aria-hidden="true">{state.glyph} </span>
         {state.label}
       </p>
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {status}
+      </p>
+      {status ? (
+        <p className="hint" aria-hidden="true">
+          ✓ {status}
+        </p>
+      ) : null}
+      {actionError ? (
+        <p className="form-error" role="alert">
+          <span aria-hidden="true">⚠ </span>
+          {actionError}
+        </p>
+      ) : null}
 
       <section className="panel" aria-labelledby="goal-title">
         <h2 id="goal-title">Goal</h2>
@@ -59,17 +154,80 @@ export function ThreadScreen({ thread, project }: ThreadScreenProps) {
         </p>
       </section>
 
+      {confirmingEnd ? (
+        <section className="panel confirm" role="group" aria-labelledby="confirm-title">
+          <h2 id="confirm-title" tabIndex={-1} ref={confirmHeading}>
+            End this thread?
+          </h2>
+          <p>ThreadBack will stop recording and save a checkpoint draft of what happened.</p>
+          <div className="actions">
+            <button type="button" className="primary" onClick={endThread} disabled={disabled}>
+              End thread and save checkpoint
+            </button>
+            <button type="button" onClick={() => setConfirmingEnd(false)}>
+              Keep working
+            </button>
+          </div>
+        </section>
+      ) : (
+        <div className="actions" role="group" aria-label="Thread actions">
+          {recording ? (
+            <>
+              <button type="button" className="primary" onClick={saveMyPlace} disabled={disabled} aria-busy={busy === "save"}>
+                {busy === "save" ? "Saving…" : "Save My Place"}
+              </button>
+              <button type="button" disabled={disabled} onClick={() => perform("pause", () => threadsApi.pause(thread.id), "Paused. Nothing is being recorded.")}>
+                Pause
+              </button>
+              <button type="button" disabled={disabled} onClick={() => perform("snapshot", () => eventsApi.captureGit(thread.id), "Git snapshot recorded.")}>
+                Take Git snapshot
+              </button>
+              <button type="button" disabled={disabled} onClick={() => setConfirmingEnd(true)}>
+                End thread…
+              </button>
+            </>
+          ) : null}
+          {thread.state === "PAUSED" ? (
+            <>
+              <button type="button" className="primary" disabled={disabled} onClick={() => perform("resume", () => threadsApi.resume(thread.id), "Recording resumed.")}>
+                Resume
+              </button>
+              <button type="button" disabled={disabled} onClick={() => setConfirmingEnd(true)}>
+                End thread…
+              </button>
+            </>
+          ) : null}
+        </div>
+      )}
+
+      {recording ? (
+        <p className="hint">
+          Record a command from the project folder with <code>tb run -- &lt;command&gt;</code>. It appears below.
+        </p>
+      ) : null}
+
+      {showsDraft && checkpoint ? <CheckpointDraftView ref={draftHeading} checkpoint={checkpoint} /> : null}
+
+      <NoteForm
+        recording={recording}
+        onAdd={async (note) => {
+          await eventsApi.addNote(thread.id, note);
+          setStatus("Note added.");
+          await loadEvents();
+        }}
+      />
+
       <section aria-labelledby="timeline-title">
         <div className="section-head">
           <h2 id="timeline-title">Evidence</h2>
-          <button type="button" onClick={() => void load()}>
+          <button type="button" onClick={() => void loadEvents()}>
             Refresh
           </button>
         </div>
-        {error ? (
+        {loadError ? (
           <p className="form-error" role="alert">
             <span aria-hidden="true">⚠ </span>
-            {error}
+            {loadError}
           </p>
         ) : events === null ? (
           <p className="empty" role="status">
@@ -77,10 +235,8 @@ export function ThreadScreen({ thread, project }: ThreadScreenProps) {
           </p>
         ) : (
           <>
-            <p className="hint" role="status">
-              {pluralize(events.length, "event")} recorded.
-            </p>
-            <Timeline events={events} />
+            <p className="hint">{pluralize(events.length, "event")} recorded.</p>
+            <Timeline items={eventItems(events)} />
           </>
         )}
       </section>

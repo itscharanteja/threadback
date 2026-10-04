@@ -1,34 +1,37 @@
-import type { ThreadEvent } from "../bindings/contracts";
-import { formatTime, summarizeEvent } from "../lib/format";
+import type { TimelineItem } from "../lib/format";
+import { formatTime } from "../lib/format";
 
-export function Timeline({ events }: { events: ThreadEvent[] }) {
-  if (events.length === 0) {
-    return <p className="empty">No evidence recorded yet.</p>;
+interface TimelineProps {
+  items: TimelineItem[];
+  label?: string;
+  emptyText?: string;
+}
+
+export function Timeline({ items, label = "Evidence timeline, oldest first", emptyText = "No evidence recorded yet." }: TimelineProps) {
+  if (items.length === 0) {
+    return <p className="empty">{emptyText}</p>;
   }
   return (
-    <ol className="timeline" aria-label="Evidence timeline, oldest first">
-      {events.map((event) => {
-        const summary = summarizeEvent(event);
-        return (
-          <li key={event.id} className="timeline-item">
-            <div className="timeline-meta">
-              <span className="tag">{summary.kind}</span>
-              <time dateTime={event.timestamp}>{formatTime(event.timestamp)}</time>
-            </div>
-            <p className={summary.preformatted ? "preformatted" : undefined}>{summary.text}</p>
-            {summary.detail ? <p className="detail">{summary.detail}</p> : null}
-            {summary.outputs?.map((output) => (
-              <details key={output.label} className="output">
-                <summary>
-                  {output.label}
-                  {output.note ? <span className="hint"> — {output.note}</span> : null}
-                </summary>
-                {output.text ? <pre>{output.text}</pre> : null}
-              </details>
-            ))}
-          </li>
-        );
-      })}
+    <ol className="timeline" aria-label={label}>
+      {items.map(({ id, timestamp, summary }) => (
+        <li key={id} className="timeline-item">
+          <div className="timeline-meta">
+            <span className="tag">{summary.kind}</span>
+            <time dateTime={timestamp}>{formatTime(timestamp)}</time>
+          </div>
+          <p className={summary.preformatted ? "preformatted" : undefined}>{summary.text}</p>
+          {summary.detail ? <p className="detail">{summary.detail}</p> : null}
+          {summary.outputs?.map((output) => (
+            <details key={output.label} className="output">
+              <summary>
+                {output.label}
+                {output.note ? <span className="hint"> — {output.note}</span> : null}
+              </summary>
+              {output.text ? <pre>{output.text}</pre> : null}
+            </details>
+          ))}
+        </li>
+      ))}
     </ol>
   );
 }
