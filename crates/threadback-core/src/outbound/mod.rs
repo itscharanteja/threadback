@@ -129,6 +129,23 @@ pub struct ApprovedPayload {
 }
 
 impl ApprovedPayload {
+    /// For in-crate tests that need a payload without a database. It is not
+    /// compiled into the library, so it cannot be used to skip `authorize`.
+    #[cfg(test)]
+    pub(crate) fn for_tests(document: OutboundPayload) -> Self {
+        let json = serde_json::to_string(&document).expect("document serializes");
+        let hash = Sha256::digest(json.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        Self {
+            checkpoint_id: CheckpointId::new(),
+            document,
+            json,
+            hash,
+        }
+    }
+
     pub fn checkpoint_id(&self) -> &CheckpointId {
         &self.checkpoint_id
     }

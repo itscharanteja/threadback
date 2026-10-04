@@ -290,15 +290,15 @@ pub struct ArtifactRef {
     pub line_hint: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
 pub struct SourcedClaim {
     pub id: String,
     pub claim: String,
     pub source_event_ids: Vec<EventId>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Confidence {
     Low,
@@ -306,8 +306,8 @@ pub enum Confidence {
     High,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
 pub struct Hypothesis {
     pub id: String,
     pub claim: String,
@@ -315,8 +315,8 @@ pub struct Hypothesis {
     pub source_event_ids: Vec<EventId>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
 pub struct FailedAttempt {
     pub action: String,
     pub outcome: String,
@@ -324,17 +324,19 @@ pub struct FailedAttempt {
     pub source_event_ids: Vec<EventId>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
 pub struct RelevantArtifact {
+    #[serde(rename = "type")]
+    #[ts(rename = "type")]
     pub artifact_type: String,
     pub relative_path: String,
     pub reason: String,
     pub source_event_ids: Vec<EventId>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
 pub struct NextAction {
     pub instruction: String,
     pub justification: String,
@@ -342,8 +344,12 @@ pub struct NextAction {
     pub source_event_ids: Vec<EventId>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+/// The resume capsule of `spec.md` §11. Field names are the wire names, so the
+/// model's output, the stored draft, and the exported JSON all share one shape.
+/// Unknown fields are rejected: a response that adds anything (a tool call, a
+/// command to run) does not parse.
 pub struct ResumeCapsule {
     pub schema_version: String,
     pub goal: String,

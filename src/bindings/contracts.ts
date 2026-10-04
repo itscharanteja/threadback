@@ -133,19 +133,19 @@ lastEventAt: string | null, recoveredAt: string, };
 
 export type ArtifactRef = { id: ArtifactId, eventId: EventId, artifactType: string, relativePath: string, contentHash: string, lineHint: number | null, };
 
-export type SourcedClaim = { id: string, claim: string, sourceEventIds: Array<EventId>, };
+export type SourcedClaim = { id: string, claim: string, source_event_ids: Array<EventId>, };
 
 export type Confidence = "low" | "medium" | "high";
 
-export type Hypothesis = { id: string, claim: string, confidence: Confidence, sourceEventIds: Array<EventId>, };
+export type Hypothesis = { id: string, claim: string, confidence: Confidence, source_event_ids: Array<EventId>, };
 
-export type FailedAttempt = { action: string, outcome: string, learning: string, sourceEventIds: Array<EventId>, };
+export type FailedAttempt = { action: string, outcome: string, learning: string, source_event_ids: Array<EventId>, };
 
-export type RelevantArtifact = { artifactType: string, relativePath: string, reason: string, sourceEventIds: Array<EventId>, };
+export type RelevantArtifact = { type: string, relative_path: string, reason: string, source_event_ids: Array<EventId>, };
 
-export type NextAction = { instruction: string, justification: string, successCheck: string, sourceEventIds: Array<EventId>, };
+export type NextAction = { instruction: string, justification: string, success_check: string, source_event_ids: Array<EventId>, };
 
-export type ResumeCapsule = { schemaVersion: string, goal: string, checkpointSummary: string, verifiedFacts: Array<SourcedClaim>, hypotheses: Array<Hypothesis>, failedAttempts: Array<FailedAttempt>, unresolvedQuestions: Array<string>, relevantArtifacts: Array<RelevantArtifact>, nextAction: NextAction, limitations: Array<string>, };
+export type ResumeCapsule = { schema_version: string, goal: string, checkpoint_summary: string, verified_facts: Array<SourcedClaim>, hypotheses: Array<Hypothesis>, failed_attempts: Array<FailedAttempt>, unresolved_questions: Array<string>, relevant_artifacts: Array<RelevantArtifact>, next_action: NextAction, limitations: Array<string>, };
 
 export type Checkpoint = { id: CheckpointId, threadId: ThreadId, startEventId: EventId, endEventId: EventId, status: string, modelId: string | null, promptVersion: string | null, payload: JsonValue, draft: ResumeCapsule | null, approved: ResumeCapsule | null, createdAt: string, approvedAt: string | null, };
 

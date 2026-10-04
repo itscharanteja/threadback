@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "goal": "Find the failing test",
+  "checkpoint_summary": "There is not enough evidence yet to say what was tried.",
+  "verified_facts": [],
+  "hypotheses": [],
+  "failed_attempts": [],
+  "unresolved_questions": [
+    "What does the failing test print?"
+  ],
+  "relevant_artifacts": [],
+  "next_action": {
+    "instruction": "Run the focused test once and record its output.",
+    "justification": "No command output was captured, so nothing can be verified yet.",
+    "success_check": "The test output is recorded in the thread.",
+    "source_event_ids": []
+  },
+  "limitations": [
+    "Only the thread start and one Git snapshot were captured."
+  ]
+}

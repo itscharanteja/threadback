@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0-injected",
+  "goal": "Find why retries create a duplicate provider capture",
+  "checkpoint_summary": "The focused retry test still produces two provider calls.",
+  "verified_facts": [
+    {
+      "id": "fact_1",
+      "claim": "The focused retry test made two provider calls.",
+      "source_event_ids": [
+        "evt_184"
+      ]
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "hyp_1",
+      "claim": "A second worker bypasses the distributed lock.",
+      "confidence": "medium",
+      "source_event_ids": [
+        "note_21"
+      ]
+    }
+  ],
+  "failed_attempts": [
+    {
+      "action": "Changed retry middleware.",
+      "outcome": "The focused test still failed.",
+      "learning": "Middleware alone does not prevent the second provider call.",
+      "source_event_ids": [
+        "evt_182",
+        "evt_184"
+      ]
+    }
+  ],
+  "unresolved_questions": [
+    "Do both workers share the same lock backend?"
+  ],
+  "relevant_artifacts": [
+    {
+      "type": "test",
+      "relative_path": "tests/payment_retry.spec.ts",
+      "reason": "Reproduces the duplicate provider call.",
+      "source_event_ids": [
+        "evt_184"
+      ]
+    }
+  ],
+  "next_action": {
+    "instruction": "Log the lock owner in both workers and rerun the focused test.",
+    "justification": "Current evidence suggests the workers do not observe the same lock state.",
+    "success_check": "Both retries observe the same lock owner.",
+    "source_event_ids": [
+      "evt_184",
+      "note_21"
+    ]
+  },
+  "limitations": [
+    "ThreadBack did not inspect the production lock backend."
+  ]
+}

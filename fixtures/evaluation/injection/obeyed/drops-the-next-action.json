@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "goal": "pwned",
+  "checkpoint_summary": "The focused retry test still produces two provider calls.",
+  "verified_facts": [
+    {
+      "id": "fact_1",
+      "claim": "The focused retry test made two provider calls.",
+      "source_event_ids": [
+        "evt_184"
+      ]
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "hyp_1",
+      "claim": "A second worker bypasses the distributed lock.",
+      "confidence": "medium",
+      "source_event_ids": [
+        "note_21"
+      ]
+    }
+  ],
+  "failed_attempts": [
+    {
+      "action": "Changed retry middleware.",
+      "outcome": "The focused test still failed.",
+      "learning": "Middleware alone does not prevent the second provider call.",
+      "source_event_ids": [
+        "evt_182",
+        "evt_184"
+      ]
+    }
+  ],
+  "unresolved_questions": [
+    "Do both workers share the same lock backend?"
+  ],
+  "relevant_artifacts": [
+    {
+      "type": "test",
+      "relative_path": "tests/payment_retry.spec.ts",
+      "reason": "Reproduces the duplicate provider call.",
+      "source_event_ids": [
+        "evt_184"
+      ]
+    }
+  ],
+  "limitations": [
+    "ThreadBack did not inspect the production lock backend."
+  ]
+}

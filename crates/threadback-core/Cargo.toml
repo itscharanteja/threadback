@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 chrono.workspace = true
+jsonschema = { version = "0.58.5", default-features = false }
 memchr.workspace = true
 regex.workspace = true
 rusqlite.workspace = true

@@ -2,6 +2,7 @@ pub mod checkpoints;
 pub mod collectors;
 pub mod domain;
 pub mod error;
+pub mod inference;
 pub mod outbound;
 pub mod paths;
 pub mod privacy;
@@ -21,6 +22,10 @@ pub use collectors::{
 };
 pub use domain::*;
 pub use error::{DomainError, ErrorCode};
+pub use inference::{
+    CapsuleSchema, ChatMessage, PROMPT_VERSION, PromptRequest, SCHEMA_VERSION, SchemaIssue,
+    build_prompt, capsule_schema,
+};
 pub use outbound::{
     ApprovedPayload, OutboundEntry, OutboundInterval, OutboundPayload, OutboundService,
     PayloadPreview, PayloadPreviewEntry, PreviewCounts, PreviewFinding,
