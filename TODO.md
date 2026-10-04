@@ -86,18 +86,18 @@
 
 ### Gate G3 — Private model call
 
-- [ ] The seeded fake secret is absent from persistence, diagnostics, and the outbound request.
-- [ ] Blocking redaction findings disable generation.
-- [ ] No request occurs before explicit payload confirmation.
-- [ ] A real Nemotron response validates against the capsule contract.
-- [ ] Invalid output receives one repair attempt and then a visible error.
-- [ ] Unsupported facts cannot proceed as verified facts.
+- [x] The seeded fake secret is absent from persistence, diagnostics, and the outbound request.
+- [x] Blocking redaction findings disable generation.
+- [x] No request occurs before explicit payload confirmation.
+- [x] A real Nemotron response validates against the capsule contract.
+- [x] Invalid output receives one repair attempt and then a visible error.
+- [x] Unsupported facts cannot proceed as verified facts.
 
 ## Day 5 — Human review, return, and deletion
 
 **Deliverable:** The user can inspect sources, correct and approve a capsule, see repository drift, resume safely, export the result, or completely delete the thread.
 
-- [ ] M-05 Preserve the immutable model draft, approved version, and correction history.
+- [x] M-05 Preserve the immutable model draft, approved version, and correction history.
 - [ ] U-03 Build source-linked review, editing, relabelling, regeneration, and approval.
 - [ ] U-04 Build drift comparison, resume, archive, explicit open/copy, export, and delete actions.
 - [ ] U-05 Build privacy, retention, redaction-test, pause-all, and destructive-confirmation controls.
