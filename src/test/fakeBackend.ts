@@ -72,8 +72,8 @@ export class FakeBackend {
         exitCode,
         signal: null,
         durationMs: 1200,
-        stdout: { head: "2 provider calls\n", tail: "", originalBytes: 17, omittedBytes: 0, truncated: false, binary: false },
-        stderr: { head: "", tail: "", originalBytes: 0, omittedBytes: 0, truncated: false, binary: false },
+        stdout: { head: "2 provider calls\n", tail: "", originalBytes: 17, omittedBytes: 0, truncated: false, binary: false, redactions: 0 },
+        stderr: { head: "", tail: "", originalBytes: 0, omittedBytes: 0, truncated: false, binary: false, redactions: 0 },
       },
     });
   }

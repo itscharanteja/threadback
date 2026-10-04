@@ -89,7 +89,11 @@ export type OutputExcerpt = { head: string, tail: string, originalBytes: number,
 /**
  * Binary output is counted but never stored.
  */
-binary: boolean, };
+binary: boolean, 
+/**
+ * Credentials replaced in this stream before it was stored.
+ */
+redactions: number, };
 
 export type CommandFinishedPayload = { startedEventId: EventId, 
 /**

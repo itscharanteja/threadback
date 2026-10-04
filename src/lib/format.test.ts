@@ -19,7 +19,7 @@ const entry = (kind: string, content: unknown): CheckpointEntry => ({
 });
 
 const excerpt = (over: Record<string, unknown> = {}) => ({
-  head: "", tail: "", originalBytes: 0, omittedBytes: 0, truncated: false, binary: false, ...over,
+  head: "", tail: "", originalBytes: 0, omittedBytes: 0, truncated: false, binary: false, redactions: 0, ...over,
 });
 
 describe("summarizeEvent", () => {

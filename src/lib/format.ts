@@ -104,18 +104,34 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function redactionNote(count: number): string | undefined {
+  return count > 0
+    ? `${pluralize(count, "credential")} replaced with [REDACTED:…] before storing.`
+    : undefined;
+}
+
+function joinNotes(...notes: (string | undefined)[]): string | undefined {
+  const present = notes.filter((note): note is string => Boolean(note));
+  return present.length > 0 ? present.join(" ") : undefined;
+}
+
 function excerptOutput(label: string, excerpt: OutputExcerpt) {
   if (excerpt.originalBytes === 0) return null;
+  const redacted = redactionNote(excerpt.redactions);
   if (excerpt.binary) {
-    return { label, text: "", note: `${formatBytes(excerpt.originalBytes)} of binary output, not stored.` };
+    return {
+      label,
+      text: "",
+      note: joinNotes(`${formatBytes(excerpt.originalBytes)} of binary output, not stored.`, redacted),
+    };
   }
-  const note = excerpt.truncated
+  const truncation = excerpt.truncated
     ? `Showing the first and last parts of ${formatBytes(excerpt.originalBytes)}; ${formatBytes(excerpt.omittedBytes)} omitted.`
     : undefined;
   const text = excerpt.truncated
     ? `${excerpt.head}\n… ${formatBytes(excerpt.omittedBytes)} omitted …\n${excerpt.tail}`
     : excerpt.head + excerpt.tail;
-  return { label, text, note };
+  return { label, text, note: joinNotes(truncation, redacted) };
 }
 
 function summarizeCommandFinished(finished: CommandFinishedPayload): EventSummary {
@@ -209,13 +225,25 @@ export interface TimelineItem {
   id: string;
   timestamp: string;
   summary: EventSummary;
+  /** A credential was replaced in this item before it was stored. */
+  redacted: boolean;
 }
 
 export const eventItems = (events: ThreadEvent[]): TimelineItem[] =>
-  events.map((event) => ({ id: event.id, timestamp: event.timestamp, summary: summarizeEvent(event) }));
+  events.map((event) => ({
+    id: event.id,
+    timestamp: event.timestamp,
+    summary: summarizeEvent(event),
+    redacted: event.sensitivity === "sensitive",
+  }));
 
 export const entryItems = (entries: CheckpointEntry[]): TimelineItem[] =>
-  entries.map((entry) => ({ id: entry.eventId, timestamp: entry.timestamp, summary: summarizeEntry(entry) }));
+  entries.map((entry) => ({
+    id: entry.eventId,
+    timestamp: entry.timestamp,
+    summary: summarizeEntry(entry),
+    redacted: JSON.stringify(entry.content).includes("[REDACTED:"),
+  }));
 
 function summarizeSnapshot(snapshot: GitSnapshot): EventSummary {
   const branch = snapshot.branch ?? "detached HEAD";

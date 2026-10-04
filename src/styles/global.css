@@ -407,6 +407,11 @@ section > h2 + .cards {
   font-weight: 600;
 }
 
+.tag-redacted {
+  border-color: var(--warn);
+  font-weight: 500;
+}
+
 .detail {
   color: var(--muted);
   font-size: 0.9rem;
