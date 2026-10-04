@@ -98,6 +98,7 @@ checkpoints.generate(checkpointId, approvedPayload) -> CapsuleDraft
 checkpoints.update(checkpointId, patch) -> CapsuleDraft
 checkpoints.approve(checkpointId) -> ApprovedCapsule
 checkpoints.getResume(checkpointId) -> ResumeViewModel
+checkpoints.preview(checkpointId, excludedEventIds) -> PayloadPreview
 
 exports.markdown(checkpointId) -> FileResult
 exports.json(checkpointId) -> FileResult
@@ -505,6 +506,19 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - Outbound policy (C-02): redaction at capture means a stored credential is already replaced. The check before sending scans again; any credential still found (a legacy row, or text the user edited into the preview) is **blocking** and disables generation until it is removed or excluded.
 - Known limits: a credential written in free prose ("my password is hunter2"), a bare high-entropy string with no recognisable prefix or name, and a private-key body pasted without its BEGIN or END marker are not detected. A secret split across two output lines other than a PEM block is not joined.
 - Performance: about 75 MB/s through the stream in an optimized build. The regex crates are built with optimizations even in dev and test builds, because unoptimized they slowed `tb` output to a few MB/s.
+
+### Outbound policy (C-02)
+
+- `OutboundService::prepare(checkpointId, excludedEventIds)` classifies every checkpoint entry:
+  - **included**: sent exactly as shown.
+  - **excluded**: you removed it. This wins over a block.
+  - **blocked**: a credential would still be sent. The value shown is the redacted text, so a credential is never displayed again.
+  - **local-only**: the kind is not on the allow-list (anything new stays local by default), or the event is marked `Blocked`. This wins over everything.
+- The scan runs at preview time, with a redactor that can carry a project's custom patterns (`OutboundService::with_redactor`). Because built-in rules already redact at capture, a block is reached in practice by a custom pattern added after capture, or by a rules upgrade. Checkpoint drafts are also redacted when stored.
+- Title, goal, and the snapshot note cannot be excluded, so a match there is replaced rather than blocked and listed in `notices`. Home paths are rewritten, not blocked.
+- Every entry reports its size as sent, and the preview reports the total size and a `payloadHash` of the exact JSON document. `canGenerate` is false while anything is blocked or nothing is selected.
+- `OutboundService::authorize(checkpointId, excludedEventIds, reviewedHash)` is the only way to obtain an `ApprovedPayload`. It rebuilds the payload on the server (it never trusts content sent back by the UI) and refuses with `PAYLOAD_BLOCKED` when anything is blocked or nothing is selected, and with `PAYLOAD_CHANGED` when the hash differs from what was reviewed. The model client (M-02) will accept only an `ApprovedPayload`, so there is no route to the network that skips the preview.
+- Not done: editing entry text in the preview (the spec asks only for exclusion), and storing a project's custom patterns (U-05).
 
 ### Demo fixture (R-02b)
 

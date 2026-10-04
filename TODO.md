@@ -77,7 +77,7 @@
 **Deliverable:** The user reviews and approves a redacted payload, and a real Nemotron call returns a source-valid capsule draft without receiving the seeded secret.
 
 - [x] C-01 Implement deterministic secret, private-key, credential-URL, and home-path redaction.
-- [ ] C-02 Classify preview entries as included, excluded, blocked, or local-only.
+- [x] C-02 Classify preview entries as included, excluded, blocked, or local-only.
 - [ ] C-04 Build the exact outbound-payload preview and confirmation workflow.
 - [ ] M-01 Store the API key only in macOS Keychain and configure endpoint/model ID.
 - [ ] M-02 Implement the Token Factory client, cancellation, timeouts, and typed errors.
