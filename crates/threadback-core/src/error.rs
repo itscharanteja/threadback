@@ -16,6 +16,8 @@ pub enum ErrorCode {
     NotConfigured,
     /// The model's reply did not meet the capsule contract, even after one correction.
     InvalidModelOutput,
+    /// An edited capsule failed the checks the model's reply must pass.
+    InvalidCapsule,
     /// The model service rejected the API key.
     ModelAuthentication,
     ModelRateLimited,
@@ -113,6 +115,16 @@ impl DomainError {
             message: message.into(),
             retryable: true,
             field: None,
+        }
+    }
+
+    /// An edited capsule has problems. `field` is where the first one is.
+    pub fn invalid_capsule(message: impl Into<String>, field: Option<String>) -> Self {
+        Self {
+            code: ErrorCode::InvalidCapsule,
+            message: message.into(),
+            retryable: false,
+            field,
         }
     }
 

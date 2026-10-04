@@ -40,6 +40,20 @@ pub struct ShownEntry {
     pub note_label: Option<NoteLabel>,
 }
 
+impl ShownEntry {
+    /// An entry as it appears in a checkpoint or an outbound payload: its
+    /// `content` carries the label the user chose when it is a note.
+    pub fn from_content(event_id: EventId, kind: &str, content: &Value) -> Self {
+        Self {
+            note_label: (kind == "note.added")
+                .then(|| serde_json::from_value(content["label"].clone()).ok())
+                .flatten(),
+            kind: kind.to_owned(),
+            event_id,
+        }
+    }
+}
+
 /// Everything needed to judge a capsule against the evidence that produced it.
 pub struct ValidationContext {
     shown: HashMap<EventId, ShownEntry>,
@@ -73,12 +87,8 @@ impl ValidationContext {
         withheld: impl IntoIterator<Item = EventId>,
         boundary: ProjectBoundary,
     ) -> Self {
-        let shown = approved.document().entries.iter().map(|entry| ShownEntry {
-            event_id: entry.event_id.clone(),
-            kind: entry.kind.clone(),
-            note_label: (entry.kind == "note.added")
-                .then(|| serde_json::from_value(entry.content["label"].clone()).ok())
-                .flatten(),
+        let shown = approved.document().entries.iter().map(|entry| {
+            ShownEntry::from_content(entry.event_id.clone(), &entry.kind, &entry.content)
         });
         Self::new(shown, withheld, boundary)
     }
@@ -157,6 +167,47 @@ pub fn evaluate(reply: &str, context: &ValidationContext) -> Evaluation {
         violations.truncate(MAX_VIOLATIONS);
         Evaluation::Invalid(violations)
     }
+}
+
+/// Judges a capsule a person has edited by the same two checks the model's
+/// reply meets: the schema (limits on length and size), then the evidence.
+/// Returns every problem, in a stable order, and none when it is acceptable.
+pub fn check_capsule(capsule: &ResumeCapsule, context: &ValidationContext) -> Vec<Violation> {
+    let value = match serde_json::to_value(capsule) {
+        Ok(value) => value,
+        Err(_) => {
+            return vec![Violation {
+                path: String::new(),
+                kind: ViolationKind::Shape,
+                message: "The capsule could not be read.".into(),
+            }];
+        }
+    };
+    let schema = match CapsuleSchema::new() {
+        Ok(schema) => schema,
+        Err(_) => {
+            return vec![Violation {
+                path: String::new(),
+                kind: ViolationKind::Shape,
+                message: "The capsule schema could not be loaded.".into(),
+            }];
+        }
+    };
+    let issues = schema.check(&value);
+    if !issues.is_empty() {
+        let mut violations: Vec<Violation> = issues
+            .into_iter()
+            .map(|issue| Violation {
+                path: issue.path,
+                kind: ViolationKind::Shape,
+                message: issue.message,
+            })
+            .collect();
+        violations.sort();
+        violations.dedup();
+        return violations;
+    }
+    validate_capsule(capsule, context)
 }
 
 fn is_uncertain_note(entry: &ShownEntry) -> bool {

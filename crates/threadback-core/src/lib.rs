@@ -1,3 +1,4 @@
+pub mod approval;
 pub mod checkpoints;
 pub mod collectors;
 pub mod config;
@@ -11,9 +12,11 @@ pub mod projects;
 pub mod storage;
 pub mod threads;
 
+pub use approval::{ApprovalResult, ApprovalService, FieldChange, diff_capsules};
 pub use checkpoints::{
     CheckpointEntry, CheckpointPayload, CheckpointRequestedPayload, CheckpointService,
-    CheckpointTrigger, Omissions, STATUS_DISCARDED, STATUS_DRAFT, STATUS_GENERATED, SnapshotStatus,
+    CheckpointTrigger, Omissions, STATUS_APPROVED, STATUS_DISCARDED, STATUS_DRAFT,
+    STATUS_GENERATED, SnapshotStatus,
 };
 pub use collectors::{
     CaptureLimits, ChangedPath, CommandFinishedPayload, CommandRequest, CommandStartedPayload,
@@ -33,8 +36,9 @@ pub use inference::{
     CapsuleModel, CapsuleSchema, ChatMessage, Evaluation, GeneratedCapsule, GenerationFailure,
     GenerationPlan, InvalidOutput, MAX_VIOLATIONS, ModelCallRecord, ModelReply, PROMPT_VERSION,
     PromptRequest, SCHEMA_VERSION, SchemaIssue, ShownEntry, ValidationContext, Violation,
-    ViolationKind, build_prompt, build_repair_prompt, capsule_schema, evaluate, finish_generation,
-    generate_capsule, generate_draft, plan_generation, run_generation, summarize, validate_capsule,
+    ViolationKind, build_prompt, build_repair_prompt, capsule_schema, check_capsule, evaluate,
+    finish_generation, generate_capsule, generate_draft, plan_generation, run_generation,
+    summarize, validate_capsule,
 };
 pub use outbound::{
     ApprovedPayload, OutboundEntry, OutboundInterval, OutboundPayload, OutboundService,

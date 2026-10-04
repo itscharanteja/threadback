@@ -78,6 +78,7 @@ fn render() -> String {
         ResumeCapsule::decl(),
         Checkpoint::decl(),
         Correction::decl(),
+        ApprovalResult::decl(),
         PreviewDisposition::decl(),
         PreviewFinding::decl(),
         PayloadPreviewEntry::decl(),

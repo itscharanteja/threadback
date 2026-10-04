@@ -22,6 +22,10 @@ pub const STATUS_DRAFT: &str = "draft";
 /// The model has produced a capsule draft. It is kept exactly as returned.
 pub const STATUS_GENERATED: &str = "generated";
 
+/// The user approved a capsule. The model's draft is still stored, unchanged,
+/// next to the approved version.
+pub const STATUS_APPROVED: &str = "approved";
+
 /// A draft the user threw away. Its evidence is not consumed: the next
 /// checkpoint covers it again.
 pub const STATUS_DISCARDED: &str = "discarded";

@@ -173,6 +173,22 @@ export type Checkpoint = { id: CheckpointId, threadId: ThreadId, startEventId: E
 
 export type Correction = { id: CorrectionId, checkpointId: CheckpointId, fieldPath: string, before: JsonValue, after: JsonValue, reason: string | null, createdAt: string, };
 
+export type ApprovalResult = { 
+/**
+ * The checkpoint with both versions: `draft` is what the model returned,
+ * untouched; `approved` is what the user signed off on.
+ */
+checkpoint: Checkpoint, 
+/**
+ * `READY`.
+ */
+thread: WorkThread, 
+/**
+ * Each change the user made to the draft, by field path. Empty when the
+ * draft was approved as it stood.
+ */
+corrections: Array<Correction>, };
+
 export type PreviewDisposition = "included" | "excluded" | "blocked" | "local_only";
 
 export type PreviewFinding = { 

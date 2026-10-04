@@ -5,14 +5,14 @@ use std::{
 
 use tauri::{App, Manager, State};
 use threadback_core::{
-    AddNoteInput, AppStatus, CancelToken, CapsuleModel, Checkpoint, CheckpointId,
-    CheckpointService, CheckpointTrigger, ConfigurationService, ConfigurationStatus,
-    ConnectionTestResult, CreateProjectInput, Database, DomainError, EventId, EventPage,
-    ModelConfigInput, OutboundService, PauseReason, PayloadPreview, Project, RecoveryReport,
-    Redactor, SecretStore, StartThreadInput, ThreadEvent, ThreadId, ThreadService,
-    TokenFactoryClient, WorkThread, approve_project, database_path, default_exclusions,
-    default_secret_store, finish_generation, plan_generation, recover_interrupted_threads,
-    run_generation,
+    AddNoteInput, AppStatus, ApprovalResult, ApprovalService, CancelToken, CapsuleModel,
+    Checkpoint, CheckpointId, CheckpointService, CheckpointTrigger, ConfigurationService,
+    ConfigurationStatus, ConnectionTestResult, Correction, CreateProjectInput, Database,
+    DomainError, EventId, EventPage, ModelConfigInput, OutboundService, PauseReason,
+    PayloadPreview, Project, RecoveryReport, Redactor, ResumeCapsule, SecretStore,
+    StartThreadInput, ThreadEvent, ThreadId, ThreadService, TokenFactoryClient, WorkThread,
+    approve_project, database_path, default_exclusions, default_secret_store, finish_generation,
+    plan_generation, recover_interrupted_threads, run_generation,
 };
 
 const TIMELINE_PAGE_SIZE: u32 = 100;
@@ -271,6 +271,27 @@ pub fn checkpoints_discard(
     state: State<'_, AppState>,
 ) -> Result<WorkThread, DomainError> {
     CheckpointService::new(&*database(&state)?).discard(&checkpoint_id)
+}
+
+/// Approves a capsule: the model's draft with whatever the user changed. The
+/// server checks it again, records each change by field path, and keeps the
+/// model's draft untouched next to the approved version.
+#[tauri::command]
+pub fn checkpoints_approve(
+    checkpoint_id: CheckpointId,
+    capsule: ResumeCapsule,
+    state: State<'_, AppState>,
+) -> Result<ApprovalResult, DomainError> {
+    ApprovalService::new(&*database(&state)?).approve(&checkpoint_id, capsule)
+}
+
+/// The changes made when this checkpoint was approved, oldest first.
+#[tauri::command]
+pub fn checkpoints_corrections(
+    checkpoint_id: CheckpointId,
+    state: State<'_, AppState>,
+) -> Result<Vec<Correction>, DomainError> {
+    ApprovalService::new(&*database(&state)?).corrections(&checkpoint_id)
 }
 
 #[tauri::command]

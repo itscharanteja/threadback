@@ -4,8 +4,9 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::{
-    ArtifactRef, Checkpoint, CheckpointId, Correction, DomainError, EventId, EventPage,
-    EventPayload, Project, ProjectId, Sensitivity, ThreadEvent, ThreadId, ThreadState, WorkThread,
+    ArtifactRef, Checkpoint, CheckpointId, Correction, CorrectionId, DomainError, EventId,
+    EventPage, EventPayload, Project, ProjectId, Sensitivity, ThreadEvent, ThreadId, ThreadState,
+    WorkThread,
 };
 
 /// Bump whenever the redaction rules change, so the next open re-scrubs
@@ -785,9 +786,42 @@ impl Database {
             .map_err(storage_error)
     }
 
+    /// Stores the capsule the user approved, once. The model's draft column is
+    /// not touched, and a second approval finds the capsule already there and
+    /// fails, so the approved version is as fixed as the draft.
+    pub fn set_checkpoint_approved(
+        &self,
+        id: &CheckpointId,
+        approved: &crate::ResumeCapsule,
+        at: DateTime<Utc>,
+    ) -> Result<(), DomainError> {
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE checkpoints
+                 SET approved_json = ?1, approved_at = ?2, status = ?3
+                 WHERE id = ?4 AND draft_json IS NOT NULL AND approved_json IS NULL AND status = ?5",
+                params![
+                    redacted_json(approved)?,
+                    at.to_rfc3339(),
+                    crate::STATUS_APPROVED,
+                    id.0,
+                    crate::STATUS_GENERATED,
+                ],
+            )
+            .map_err(storage_error)?;
+        if changed == 0 {
+            return Err(DomainError::invalid_state(
+                "This capsule was already approved, or there is no generated capsule to approve.",
+            ));
+        }
+        Ok(())
+    }
+
+    /// A correction is persisted content, so both sides pass through redaction.
     pub fn insert_correction(&self, correction: &Correction) -> Result<(), DomainError> {
-        let before = serde_json::to_string(&correction.before).map_err(json_error)?;
-        let after = serde_json::to_string(&correction.after).map_err(json_error)?;
+        let before = redacted_json(&correction.before)?;
+        let after = redacted_json(&correction.after)?;
         self.connection
             .execute(
                 "INSERT INTO corrections
@@ -805,6 +839,37 @@ impl Database {
             )
             .map_err(storage_error)?;
         Ok(())
+    }
+
+    /// Oldest first; corrections made together keep the order they were found in.
+    pub fn list_corrections(
+        &self,
+        checkpoint_id: &CheckpointId,
+    ) -> Result<Vec<Correction>, DomainError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT id, checkpoint_id, field_path, before_json, after_json, reason, created_at
+                 FROM corrections WHERE checkpoint_id = ?1 ORDER BY created_at, rowid",
+            )
+            .map_err(storage_error)?;
+        statement
+            .query_map([&checkpoint_id.0], |row| {
+                let before: String = row.get(3)?;
+                let after: String = row.get(4)?;
+                Ok(Correction {
+                    id: CorrectionId(row.get(0)?),
+                    checkpoint_id: CheckpointId(row.get(1)?),
+                    field_path: row.get(2)?,
+                    before: serde_json::from_str(&before).map_err(to_sql_error)?,
+                    after: serde_json::from_str(&after).map_err(to_sql_error)?,
+                    reason: row.get(5)?,
+                    created_at: parse_timestamp(row.get(6)?)?,
+                })
+            })
+            .map_err(storage_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage_error)
     }
 }
 

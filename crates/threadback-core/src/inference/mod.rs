@@ -21,6 +21,6 @@ pub use schema::{CapsuleSchema, SCHEMA_VERSION, SchemaIssue, capsule_schema};
 #[cfg(feature = "model-client")]
 pub use token_factory::{CancelToken, TokenFactoryClient};
 pub use validate::{
-    Evaluation, MAX_VIOLATIONS, ShownEntry, ValidationContext, Violation, ViolationKind, evaluate,
-    summarize, validate_capsule,
+    Evaluation, MAX_VIOLATIONS, ShownEntry, ValidationContext, Violation, ViolationKind,
+    check_capsule, evaluate, summarize, validate_capsule,
 };

@@ -19,6 +19,8 @@ fn main() {
             commands::checkpoints_save_place,
             commands::checkpoints_list,
             commands::checkpoints_get,
+            commands::checkpoints_approve,
+            commands::checkpoints_corrections,
             commands::checkpoints_preview,
             commands::checkpoints_generate,
             commands::checkpoints_discard,
