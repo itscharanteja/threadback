@@ -3,9 +3,10 @@ use std::{fs, sync::Mutex};
 use tauri::{App, Manager, State};
 use threadback_core::{
     AddNoteInput, AppStatus, Checkpoint, CheckpointId, CheckpointService, CheckpointTrigger,
-    CreateProjectInput, Database, DomainError, EventPage, PauseReason, Project, RecoveryReport,
-    StartThreadInput, ThreadEvent, ThreadId, ThreadService, WorkThread, approve_project,
-    database_path, default_exclusions, recover_interrupted_threads,
+    CreateProjectInput, Database, DomainError, EventId, EventPage, OutboundService, PauseReason,
+    PayloadPreview, Project, RecoveryReport, StartThreadInput, ThreadEvent, ThreadId,
+    ThreadService, WorkThread, approve_project, database_path, default_exclusions,
+    recover_interrupted_threads,
 };
 
 const TIMELINE_PAGE_SIZE: u32 = 100;
@@ -123,6 +124,17 @@ pub fn checkpoints_list(
     state: State<'_, AppState>,
 ) -> Result<Vec<Checkpoint>, DomainError> {
     CheckpointService::new(&*database(&state)?).list(&thread_id)
+}
+
+/// Exactly what would be sent for this checkpoint, with the entries the user
+/// excluded left out. Nothing is sent by previewing.
+#[tauri::command]
+pub fn checkpoints_preview(
+    checkpoint_id: CheckpointId,
+    excluded_event_ids: Vec<EventId>,
+    state: State<'_, AppState>,
+) -> Result<PayloadPreview, DomainError> {
+    OutboundService::new(&*database(&state)?).prepare(&checkpoint_id, &excluded_event_ids)
 }
 
 #[tauri::command]

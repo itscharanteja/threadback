@@ -385,32 +385,13 @@ pub struct Correction {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum PreviewDisposition {
     Included,
     Excluded,
     Blocked,
     LocalOnly,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct PayloadPreviewEntry {
-    pub event_id: EventId,
-    pub disposition: PreviewDisposition,
-    pub value: Value,
-    pub size_bytes: u32,
-    pub reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct PayloadPreview {
-    pub checkpoint_id: CheckpointId,
-    pub entries: Vec<PayloadPreviewEntry>,
-    pub total_size_bytes: u32,
-    pub has_blocking_findings: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

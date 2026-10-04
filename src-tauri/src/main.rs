@@ -19,6 +19,7 @@ fn main() {
             commands::checkpoints_save_place,
             commands::checkpoints_list,
             commands::checkpoints_get,
+            commands::checkpoints_preview,
             commands::events_list,
             commands::events_add_note,
             commands::events_capture_git,

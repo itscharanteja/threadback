@@ -74,8 +74,13 @@ fn render() -> String {
         Checkpoint::decl(),
         Correction::decl(),
         PreviewDisposition::decl(),
+        PreviewFinding::decl(),
         PayloadPreviewEntry::decl(),
+        PreviewCounts::decl(),
         PayloadPreview::decl(),
+        OutboundEntry::decl(),
+        OutboundInterval::decl(),
+        OutboundPayload::decl(),
         AppStatus::decl(),
     ]
     .map(|declaration| declaration.replacen("type ", "export type ", 1));

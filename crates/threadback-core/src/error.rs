@@ -8,6 +8,10 @@ pub enum ErrorCode {
     NotFound,
     InvalidState,
     ProjectBoundaryViolation,
+    /// A credential would be sent, or nothing is selected to send.
+    PayloadBlocked,
+    /// What would be sent is no longer what the user reviewed.
+    PayloadChanged,
     StorageUnavailable,
     Internal,
 }
@@ -54,6 +58,24 @@ impl DomainError {
             code: ErrorCode::ProjectBoundaryViolation,
             message: message.into(),
             retryable: false,
+            field: None,
+        }
+    }
+
+    pub fn payload_blocked(message: impl Into<String>) -> Self {
+        Self {
+            code: ErrorCode::PayloadBlocked,
+            message: message.into(),
+            retryable: false,
+            field: None,
+        }
+    }
+
+    pub fn payload_changed(message: impl Into<String>) -> Self {
+        Self {
+            code: ErrorCode::PayloadChanged,
+            message: message.into(),
+            retryable: true,
             field: None,
         }
     }

@@ -4,7 +4,9 @@ import type {
   Checkpoint,
   CheckpointId,
   CreateProjectInput,
+  EventId,
   EventPage,
+  PayloadPreview,
   Project,
   RecoveryReport,
   StartThreadInput,
@@ -91,5 +93,10 @@ export const checkpoints = {
 
   get(checkpointId: CheckpointId): Promise<Checkpoint> {
     return invoke<Checkpoint>("checkpoints_get", { checkpointId });
+  },
+
+  /** What would be sent, with the excluded entries left out. Sends nothing. */
+  preview(checkpointId: CheckpointId, excludedEventIds: EventId[] = []): Promise<PayloadPreview> {
+    return invoke<PayloadPreview>("checkpoints_preview", { checkpointId, excludedEventIds });
   },
 };

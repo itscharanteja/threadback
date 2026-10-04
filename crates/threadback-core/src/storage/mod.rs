@@ -545,20 +545,16 @@ impl Database {
         Ok(())
     }
 
+    /// Drafts and approved capsules are persisted content, so they pass
+    /// through redaction here as well.
     pub fn insert_checkpoint(&self, checkpoint: &Checkpoint) -> Result<(), DomainError> {
-        let payload = serde_json::to_string(&checkpoint.payload).map_err(json_error)?;
-        let draft = checkpoint
-            .draft
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()
-            .map_err(json_error)?;
+        let payload = redacted_json(&checkpoint.payload)?;
+        let draft = checkpoint.draft.as_ref().map(redacted_json).transpose()?;
         let approved = checkpoint
             .approved
             .as_ref()
-            .map(serde_json::to_string)
-            .transpose()
-            .map_err(json_error)?;
+            .map(redacted_json)
+            .transpose()?;
         self.connection
             .execute(
                 "INSERT INTO checkpoints
@@ -666,6 +662,12 @@ fn thread_from_row(row: &Row<'_>) -> rusqlite::Result<WorkThread> {
         created_at: parse_timestamp(row.get::<_, String>(7)?)?,
         updated_at: parse_timestamp(row.get::<_, String>(8)?)?,
     })
+}
+
+fn redacted_json<T: serde::Serialize>(value: &T) -> Result<String, DomainError> {
+    let mut json = serde_json::to_value(value).map_err(json_error)?;
+    crate::privacy::redact_value(crate::privacy::Redactor::builtin(), &mut json);
+    serde_json::to_string(&json).map_err(json_error)
 }
 
 fn event_from_row(row: &Row<'_>) -> rusqlite::Result<ThreadEvent> {

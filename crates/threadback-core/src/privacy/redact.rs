@@ -37,6 +37,21 @@ impl FindingKind {
         }
     }
 
+    /// How a finding reads in a sentence, such as "a private key".
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::PrivateKey => "a private key",
+            Self::BearerToken => "a bearer token",
+            Self::UrlPassword => "a password in a URL",
+            Self::UrlToken => "a token in a URL",
+            Self::ProviderToken => "an API token",
+            Self::Jwt => "a JWT",
+            Self::SecretAssignment => "a secret value",
+            Self::Custom => "text matching one of your custom patterns",
+            Self::HomePath => "a home-directory path",
+        }
+    }
+
     /// Everything except a rewritten home path is a credential.
     pub fn is_secret(self) -> bool {
         self != Self::HomePath

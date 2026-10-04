@@ -153,8 +153,49 @@ export type Correction = { id: CorrectionId, checkpointId: CheckpointId, fieldPa
 
 export type PreviewDisposition = "included" | "excluded" | "blocked" | "local_only";
 
-export type PayloadPreviewEntry = { eventId: EventId, disposition: PreviewDisposition, value: JsonValue, sizeBytes: number, reason: string | null, };
+export type PreviewFinding = { 
+/**
+ * What was found, in a sentence fragment such as "a bearer token".
+ */
+description: string, count: number, };
 
-export type PayloadPreview = { checkpointId: CheckpointId, entries: Array<PayloadPreviewEntry>, totalSizeBytes: number, hasBlockingFindings: boolean, };
+export type PayloadPreviewEntry = { eventId: EventId, timestamp: string, kind: string, disposition: PreviewDisposition, 
+/**
+ * Exactly what would be sent for an included entry. For a blocked entry
+ * it is the text with the offending parts replaced, so a credential is
+ * never shown again.
+ */
+value: JsonValue, 
+/**
+ * Size of `value` as sent.
+ */
+sizeBytes: number, reason: string | null, findings: Array<PreviewFinding>, };
+
+export type PreviewCounts = { included: number, excluded: number, blocked: number, localOnly: number, };
+
+export type PayloadPreview = { checkpointId: CheckpointId, threadTitle: string, goal: string, trigger: CheckpointTrigger, finalSnapshot: SnapshotStatus, entries: Array<PayloadPreviewEntry>, counts: PreviewCounts, 
+/**
+ * Changes made to the title, goal, or snapshot note, which cannot be
+ * excluded.
+ */
+notices: Array<string>, 
+/**
+ * Size of everything that would be sent.
+ */
+totalSizeBytes: number, 
+/**
+ * Identifies exactly what would be sent. Approval must present it back.
+ */
+payloadHash: string, hasBlockingFindings: boolean, 
+/**
+ * False while anything is blocked or nothing is selected.
+ */
+canGenerate: boolean, };
+
+export type OutboundEntry = { eventId: EventId, timestamp: string, kind: string, content: JsonValue, };
+
+export type OutboundInterval = { startEventId: EventId, endEventId: EventId, eventCount: number, };
+
+export type OutboundPayload = { schemaVersion: number, threadTitle: string, goal: string, trigger: CheckpointTrigger, interval: OutboundInterval, finalSnapshot: SnapshotStatus, entries: Array<OutboundEntry>, omissions: Omissions, };
 
 export type AppStatus = { service: string, version: string, ready: boolean, };
