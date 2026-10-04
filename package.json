@@ -14,7 +14,10 @@
     "test": "$HOME/.cargo/bin/cargo test --workspace",
     "format": "$HOME/.cargo/bin/cargo fmt --all -- --check",
     "tauri": "tauri",
-    "demo:reset": "node scripts/reset-demo.mjs"
+    "demo:reset": "node scripts/reset-demo.mjs",
+    "demo:attempt-fix": "node scripts/demo-step.mjs attempt-fix",
+    "demo:revert-fix": "node scripts/demo-step.mjs revert-fix",
+    "demo:drift": "node scripts/demo-step.mjs drift"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:retry": "node --test tests/payment-retry.test.mjs"
+    "test": "node --test tests/payment-retry.test.mjs tests/lock-owner.test.mjs",
+    "test:retry": "node --test tests/payment-retry.test.mjs",
+    "test:lock": "node --test tests/lock-owner.test.mjs",
+    "test:noisy": "node tests/noisy.mjs"
   }
 }

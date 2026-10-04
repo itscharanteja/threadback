@@ -1,2 +1,2 @@
 FAIL payment retry: expected exactly one provider call, received two
-diagnostic token: nbf_demo_7F4A91C2_DO_NOT_SEND
+provider request: Authorization: Bearer nbf_demo_7F4A91C2_DO_NOT_SEND
