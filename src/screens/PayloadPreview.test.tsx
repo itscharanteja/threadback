@@ -23,10 +23,18 @@ const project: Project = {
 
 let backend: FakeBackend;
 
+const openSettings = vi.fn();
+
 function Harness() {
   const [thread, setThread] = useState(backend.thread);
   return (
-    <ThreadScreen thread={thread} project={project} refreshMs={60_000} onChanged={async () => setThread({ ...backend.thread })} />
+    <ThreadScreen
+      thread={thread}
+      project={project}
+      refreshMs={60_000}
+      onOpenSettings={openSettings}
+      onChanged={async () => setThread({ ...backend.thread })}
+    />
   );
 }
 
@@ -50,7 +58,7 @@ async function openPreview(notes: { text: string; label: "fact" | "hypothesis" }
   return user;
 }
 
-const generateButton = () => screen.getByRole("button", { name: /Generate capsule|Requesting/ });
+const generateButton = () => screen.getByRole("button", { name: /Generate capsule|Generating/ });
 const entryBox = (name: RegExp) => screen.getByRole("checkbox", { name });
 
 describe("reviewing the payload", () => {
@@ -186,7 +194,7 @@ describe("leaving the review", () => {
   it("cancel returns to the draft and sends nothing", async () => {
     const user = await openPreview();
     await user.click(entryBox(/Hypothesis/));
-    await user.click(button("Cancel"));
+    await user.click(button("Back to the draft"));
     expect(await screen.findByRole("heading", { name: "Checkpoint draft" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Review what will be sent" })).toBeNull();
     expect(backend.callsTo("checkpoints_generate")).toHaveLength(0);
@@ -231,5 +239,100 @@ describe("leaving the review", () => {
     await user.click(button("Discard draft"));
     expect(await screen.findByText(/Another thread is already recording/)).toBeInTheDocument();
     expect(screen.getByText("Checkpoint draft — not recording")).toBeInTheDocument();
+  });
+});
+
+describe("generating a capsule", () => {
+  const withKey = async () => {
+    const user = await openPreview();
+    backend.config.hasApiKey = true;
+    return user;
+  };
+
+  it("names where the evidence will go before anything is sent", async () => {
+    await openPreview();
+    expect(
+      await screen.findByText(/sends exactly the payload shown here to api\.tokenfactory\.nebius\.com using nvidia\/nemotron-3-super-120b-a12b/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the capsule the model returned, in separate labelled sections", async () => {
+    const user = await withKey();
+    await user.click(generateButton());
+
+    const heading = await screen.findByRole("heading", { name: "Resume capsule (draft)" });
+    expect(heading).toHaveFocus();
+    const capsule = heading.closest("section")!;
+    expect(within(capsule).getByText("Log the lock owner in both workers and rerun the focused test.")).toBeInTheDocument();
+    expect(within(capsule).getByText(/Both retries observe the same lock owner/)).toBeInTheDocument();
+    expect(within(capsule).getByRole("heading", { name: "Verified facts" })).toBeInTheDocument();
+    expect(within(capsule).getByText(/The focused retry test made two provider calls\./)).toBeInTheDocument();
+    expect(within(capsule).getByRole("heading", { name: "Hypotheses (not proven)" })).toBeInTheDocument();
+    expect(within(capsule).getByText(/medium confidence/)).toBeInTheDocument();
+    expect(within(capsule).getByText(/Do both workers share the same lock backend\?/)).toBeInTheDocument();
+    expect(within(capsule).getByText(/Written by nvidia\/nemotron-3-super-120b-a12b/)).toBeInTheDocument();
+    expect(within(capsule).getByText(/It is a draft/)).toBeInTheDocument();
+
+    // The review is over; the evidence stays below, and it cannot be re-sent.
+    expect(screen.queryByRole("heading", { name: "Review what will be sent" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Checkpoint draft" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Review what will be sent…" })).toBeNull();
+    expect(screen.getByText(/the evidence the capsule above was written from/)).toBeInTheDocument();
+    expect(backend.callsTo("checkpoints_generate")).toHaveLength(1);
+  });
+
+  it("says progress is under way, locks the review, and lets the user cancel", async () => {
+    const user = await withKey();
+    backend.holdGenerate = true;
+    await user.click(generateButton());
+
+    expect(await screen.findByText(/Waiting for api\.tokenfactory\.nebius\.com… this can take up to 60 seconds/)).toBeInTheDocument();
+    expect(generateButton()).toHaveAttribute("aria-disabled", "true");
+    expect(generateButton()).toHaveTextContent("Generating…");
+    // What was reviewed cannot change while it is being sent.
+    screen.getAllByRole("checkbox").forEach((box) => expect(box).toBeDisabled());
+    expect(screen.queryByRole("button", { name: "Back to the draft" })).toBeNull();
+    expect(button("Discard draft and keep working…")).toBeDisabled();
+
+    await user.click(button("Cancel generation"));
+    expect(await screen.findByText(/Generation was cancelled\. Nothing more was sent\./)).toBeInTheDocument();
+    expect(backend.callsTo("checkpoints_cancel_generation")).toHaveLength(1);
+    expect(screen.queryByText(/Waiting for/)).toBeNull();
+    screen.getAllByRole("checkbox").filter((box) => !box.hasAttribute("disabled")).forEach((box) => expect(box).toBeEnabled());
+    expect(screen.queryByRole("heading", { name: "Resume capsule (draft)" })).toBeNull();
+
+    // And it can be tried again.
+    backend.holdGenerate = false;
+    await user.click(generateButton());
+    expect(await screen.findByRole("heading", { name: "Resume capsule (draft)" })).toBeInTheDocument();
+  });
+
+  it("points to the settings when there is no key, and sends nothing", async () => {
+    const user = await openPreview();
+    openSettings.mockClear();
+    await user.click(generateButton());
+    expect(await screen.findByText(/Add your model API key in Settings/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing was sent/)).toBeInTheDocument();
+    await user.click(button("Open model settings"));
+    expect(openSettings).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("heading", { name: "Review what will be sent" })).toBeInTheDocument();
+  });
+
+  it("points to the settings when the service rejects the key", async () => {
+    const user = await withKey();
+    backend.failNext("checkpoints_generate", "The model service rejected the API key. Check it in Settings.", null, "MODEL_AUTHENTICATION");
+    await user.click(generateButton());
+    expect(await screen.findByText(/rejected the API key/)).toBeInTheDocument();
+    expect(button("Open model settings")).toBeInTheDocument();
+  });
+
+  it("shows other failures without sending the user away, and keeps the draft", async () => {
+    const user = await withKey();
+    backend.failNext("checkpoints_generate", "The model service did not answer within 60 seconds. Your checkpoint is kept; you can try again.", null, "MODEL_TIMEOUT");
+    await user.click(generateButton());
+    expect(await screen.findByText(/did not answer within 60 seconds/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open model settings" })).toBeNull();
+    expect(generateButton()).toHaveAttribute("aria-disabled", "false");
+    expect(screen.getByRole("heading", { name: "Review what will be sent" })).toBeInTheDocument();
   });
 });

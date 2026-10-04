@@ -2,6 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AddNoteInput,
   Checkpoint,
+  ConfigurationStatus,
+  ConnectionTestResult,
+  ModelConfigInput,
   CheckpointId,
   CreateProjectInput,
   EventId,
@@ -95,9 +98,17 @@ export const checkpoints = {
     return invoke<Checkpoint>("checkpoints_get", { checkpointId });
   },
 
-  /** Asks for a capsule from the reviewed payload. Refused if it is blocked or has changed. */
-  generate(checkpointId: CheckpointId, excludedEventIds: EventId[], reviewedHash: string): Promise<void> {
-    return invoke<void>("checkpoints_generate", { checkpointId, excludedEventIds, reviewedHash });
+  /**
+   * Asks the model for a capsule from the reviewed payload and resolves to the
+   * checkpoint with its draft. Refused if the payload is blocked or has changed.
+   */
+  generate(checkpointId: CheckpointId, excludedEventIds: EventId[], reviewedHash: string): Promise<Checkpoint> {
+    return invoke<Checkpoint>("checkpoints_generate", { checkpointId, excludedEventIds, reviewedHash });
+  },
+
+  /** Stops the generation in progress. Nothing more is sent. */
+  cancelGeneration(): Promise<void> {
+    return invoke<void>("checkpoints_cancel_generation");
   },
 
   /** Throws a draft away and returns the thread to recording. */
@@ -108,5 +119,25 @@ export const checkpoints = {
   /** What would be sent, with the excluded entries left out. Sends nothing. */
   preview(checkpointId: CheckpointId, excludedEventIds: EventId[] = []): Promise<PayloadPreview> {
     return invoke<PayloadPreview>("checkpoints_preview", { checkpointId, excludedEventIds });
+  },
+};
+
+export const configuration = {
+  status(): Promise<ConfigurationStatus> {
+    return invoke<ConfigurationStatus>("configuration_status");
+  },
+
+  /** The key, if given, goes straight to the Keychain. Nothing returned contains it. */
+  store(input: ModelConfigInput): Promise<ConfigurationStatus> {
+    return invoke<ConfigurationStatus>("configuration_store", { input });
+  },
+
+  removeApiKey(): Promise<ConfigurationStatus> {
+    return invoke<ConfigurationStatus>("configuration_remove_key");
+  },
+
+  /** One tiny request that contains none of the user's evidence. Saves nothing. */
+  test(input: ModelConfigInput): Promise<ConnectionTestResult> {
+    return invoke<ConnectionTestResult>("configuration_test", { input });
   },
 };

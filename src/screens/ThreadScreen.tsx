@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Checkpoint, Project, ThreadEvent, WorkThread } from "../bindings/contracts";
 import { checkpoints as checkpointsApi, events as eventsApi, threads as threadsApi } from "../api/commands";
 import { toDomainError } from "../api/errors";
+import { CapsuleView } from "../components/CapsuleView";
 import { CheckpointDraftView } from "../components/CheckpointDraftView";
 import { NoteForm } from "../components/NoteForm";
 import { PayloadPreviewPanel } from "../components/PayloadPreviewPanel";
@@ -16,6 +17,8 @@ interface ThreadScreenProps {
   project: Project | undefined;
   /** Called after any action so the rest of the app sees the new state. */
   onChanged: () => Promise<void> | void;
+  /** Opens the model settings, for a generation that needs a key. */
+  onOpenSettings?: () => void;
   /** How often the evidence refreshes while the thread is recording. */
   refreshMs?: number;
 }
@@ -23,7 +26,7 @@ interface ThreadScreenProps {
 const sameEvents = (a: ThreadEvent[] | null, b: ThreadEvent[]) =>
   a !== null && a.length === b.length && a.every((event, index) => event.id === b[index].id);
 
-export function ThreadScreen({ thread, project, onChanged, refreshMs = LIVE_REFRESH_MS }: ThreadScreenProps) {
+export function ThreadScreen({ thread, project, onChanged, onOpenSettings = () => {}, refreshMs = LIVE_REFRESH_MS }: ThreadScreenProps) {
   const [events, setEvents] = useState<ThreadEvent[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [checkpoint, setCheckpoint] = useState<Checkpoint | null>(null);
@@ -33,9 +36,11 @@ export function ThreadScreen({ thread, project, onChanged, refreshMs = LIVE_REFR
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const draftHeading = useRef<HTMLHeadingElement>(null);
+  const capsuleHeading = useRef<HTMLHeadingElement>(null);
   const previewHeading = useRef<HTMLHeadingElement>(null);
   const confirmHeading = useRef<HTMLHeadingElement>(null);
   const focusDraftNext = useRef(false);
+  const focusCapsuleNext = useRef(false);
 
   const recording = isRecording(thread.state);
   const showsDraft = ["CHECKPOINT_DRAFT", "FAILED", "READY"].includes(thread.state);
@@ -83,6 +88,14 @@ export function ThreadScreen({ thread, project, onChanged, refreshMs = LIVE_REFR
       .then((list) => setCheckpoint(list.find((candidate) => candidate.status !== "discarded") ?? null))
       .catch((failure) => setLoadError(toDomainError(failure).message));
   }, [showsDraft, thread.id, thread.updatedAt]);
+
+  useEffect(() => {
+    if (checkpoint?.draft && focusCapsuleNext.current) {
+      focusCapsuleNext.current = false;
+      capsuleHeading.current?.focus();
+    }
+    // Closing the review is what puts the capsule on screen.
+  }, [checkpoint, reviewing]);
 
   useEffect(() => {
     if (checkpoint && focusDraftNext.current) {
@@ -226,7 +239,7 @@ export function ThreadScreen({ thread, project, onChanged, refreshMs = LIVE_REFR
       ) : null}
 
       {showsDraft && checkpoint ? (
-        reviewing ? (
+        reviewing && !checkpoint.draft ? (
           <PayloadPreviewPanel
             ref={previewHeading}
             checkpoint={checkpoint}
@@ -237,15 +250,28 @@ export function ThreadScreen({ thread, project, onChanged, refreshMs = LIVE_REFR
               draftHeading.current?.focus();
             }}
             onDiscard={discardDraft}
+            onOpenSettings={onOpenSettings}
+            onGenerated={async (generated) => {
+              // Focus moves once the capsule has been rendered, not before.
+              focusCapsuleNext.current = true;
+              setCheckpoint(generated);
+              setReviewing(false);
+              setStatus("Capsule draft generated. Nothing else was sent.");
+              await onChanged();
+            }}
           />
         ) : (
-          <CheckpointDraftView
-            ref={draftHeading}
-            checkpoint={checkpoint}
-            busy={disabled}
-            onReview={() => setReviewing(true)}
-            onDiscard={discardDraft}
-          />
+          <>
+            {checkpoint.draft ? <CapsuleView ref={capsuleHeading} checkpoint={checkpoint} /> : null}
+            <CheckpointDraftView
+              ref={draftHeading}
+              checkpoint={checkpoint}
+              generated={Boolean(checkpoint.draft)}
+              busy={disabled}
+              onReview={() => setReviewing(true)}
+              onDiscard={discardDraft}
+            />
+          </>
         )
       ) : null}
 

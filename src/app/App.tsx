@@ -6,6 +6,7 @@ import { StatusBar } from "../components/StatusBar";
 import { ApproveProjectScreen } from "../screens/ApproveProjectScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { NewThreadScreen } from "../screens/NewThreadScreen";
+import { ModelSettingsScreen } from "../screens/ModelSettingsScreen";
 import { PrivacyScreen } from "../screens/PrivacyScreen";
 import { ThreadScreen } from "../screens/ThreadScreen";
 import { useAppData, useOnline } from "../state/useAppData";
@@ -15,7 +16,8 @@ type View =
   | { name: "approve" }
   | { name: "new-thread"; projectId?: string }
   | { name: "thread"; threadId: string }
-  | { name: "privacy" };
+  | { name: "privacy" }
+  | { name: "settings" };
 
 export function App() {
   const data = useAppData();
@@ -81,6 +83,13 @@ export function App() {
           >
             Privacy
           </button>
+          <button
+            type="button"
+            aria-current={view.name === "settings" ? "page" : undefined}
+            onClick={() => setView({ name: "settings" })}
+          >
+            Model
+          </button>
         </nav>
       </header>
 
@@ -124,6 +133,7 @@ export function App() {
               thread={shownThread}
               project={data.projects.find((project) => project.id === shownThread.projectId)}
               onChanged={data.refresh}
+              onOpenSettings={() => setView({ name: "settings" })}
             />
           ) : (
             <p className="empty" role="status">
@@ -131,6 +141,7 @@ export function App() {
             </p>
           ))}
         {view.name === "privacy" && <PrivacyScreen projects={data.projects} />}
+        {view.name === "settings" && <ModelSettingsScreen />}
       </main>
     </>
   );

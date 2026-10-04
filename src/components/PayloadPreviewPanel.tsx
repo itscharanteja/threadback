@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
-import type { Checkpoint, PayloadPreview, PayloadPreviewEntry } from "../bindings/contracts";
-import { checkpoints as checkpointsApi } from "../api/commands";
+import type { Checkpoint, ConfigurationStatus, PayloadPreview, PayloadPreviewEntry } from "../bindings/contracts";
+import { checkpoints as checkpointsApi, configuration } from "../api/commands";
 import { toDomainError } from "../api/errors";
 import { formatBytes, formatTime, pluralize, summarizeEntry } from "../lib/format";
 import { DiscardDraftControl } from "./DiscardDraftControl";
@@ -24,6 +24,9 @@ interface PayloadPreviewPanelProps {
   checkpoint: Checkpoint;
   onCancel: () => void;
   onDiscard: () => Promise<void>;
+  /** Called with the checkpoint once the model's capsule has been stored. */
+  onGenerated: (checkpoint: Checkpoint) => void;
+  onOpenSettings: () => void;
   busy: boolean;
 }
 
@@ -34,13 +37,14 @@ interface PayloadPreviewPanelProps {
  * one shown here.
  */
 export const PayloadPreviewPanel = forwardRef<HTMLHeadingElement, PayloadPreviewPanelProps>(
-  function PayloadPreviewPanel({ checkpoint, onCancel, onDiscard, busy }, headingRef) {
+  function PayloadPreviewPanel({ checkpoint, onCancel, onDiscard, onGenerated, onOpenSettings, busy }, headingRef) {
     const [excluded, setExcluded] = useState<string[]>([]);
     const [preview, setPreview] = useState<PayloadPreview | null>(null);
     const [loadedFor, setLoadedFor] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [generating, setGenerating] = useState(false);
-    const [outcome, setOutcome] = useState<string | null>(null);
+    const [outcome, setOutcome] = useState<{ message: string; needsSettings: boolean } | null>(null);
+    const [connection, setConnection] = useState<ConfigurationStatus | null>(null);
     const latest = useRef(0);
     const key = excluded.join(",");
 
@@ -64,6 +68,10 @@ export const PayloadPreviewPanel = forwardRef<HTMLHeadingElement, PayloadPreview
       void load(excluded);
     }, [load, excluded]);
 
+    useEffect(() => {
+      configuration.status().then(setConnection).catch(() => setConnection(null));
+    }, []);
+
     const toggle = (id: string) => {
       setOutcome(null);
       setExcluded((current) => (current.includes(id) ? current.filter((other) => other !== id) : [...current, id]));
@@ -71,25 +79,26 @@ export const PayloadPreviewPanel = forwardRef<HTMLHeadingElement, PayloadPreview
 
     // The preview must match the current selection before it can be sent.
     const fresh = preview !== null && loadedFor === key;
-    const canGenerate = fresh && preview.canGenerate && !generating && !busy;
+    const locked = generating || busy;
+    const canGenerate = fresh && preview.canGenerate && !locked;
 
     async function generate() {
       if (!canGenerate || !preview) return;
       setGenerating(true);
       setOutcome(null);
       try {
-        await checkpointsApi.generate(checkpoint.id, excluded, preview.payloadHash);
-        setOutcome("Generation was requested.");
+        onGenerated(await checkpointsApi.generate(checkpoint.id, excluded, preview.payloadHash));
       } catch (failure) {
         const domain = toDomainError(failure);
-        setOutcome(domain.message);
+        setOutcome({ message: domain.message, needsSettings: domain.code === "NOT_CONFIGURED" || domain.code === "MODEL_AUTHENTICATION" });
         if (domain.code === "PAYLOAD_CHANGED" || domain.code === "PAYLOAD_BLOCKED") await load(excluded);
       } finally {
         setGenerating(false);
       }
     }
 
-    let hint = "Pressing Generate sends exactly the payload shown here to the model, and nothing else.";
+    const destination = connection ? `${connection.destinationHost} using ${connection.modelId}` : "the model";
+    let hint = `Pressing Generate sends exactly the payload shown here to ${destination}, and nothing else.`;
     if (preview && !fresh) hint = "Updating the payload…";
     else if (preview?.hasBlockingFindings) {
       hint = `Generate is unavailable: ${pluralize(preview.counts.blocked, "entry", "entries")} contain${preview.counts.blocked === 1 ? "s" : ""} a credential. Exclude ${preview.counts.blocked === 1 ? "it" : "them"} to continue.`;
@@ -172,7 +181,7 @@ export const PayloadPreviewPanel = forwardRef<HTMLHeadingElement, PayloadPreview
                         id={checkboxId}
                         type="checkbox"
                         checked={!local && !isExcluded}
-                        disabled={local}
+                        disabled={local || locked}
                         aria-describedby={`${checkboxId}-state`}
                         onChange={() => toggle(entry.eventId)}
                       />
@@ -218,10 +227,24 @@ export const PayloadPreviewPanel = forwardRef<HTMLHeadingElement, PayloadPreview
           </p>
         )}
 
+        {generating ? (
+          <p className="hint" role="status">
+            Waiting for {connection?.destinationHost ?? "the model"}… this can take up to{" "}
+            {connection?.timeoutSecs ?? 60} seconds. You can cancel; nothing more will be sent.
+          </p>
+        ) : null}
         {outcome ? (
           <p className="form-error" role="alert">
             <span aria-hidden="true">⚠ </span>
-            {outcome}
+            {outcome.message}
+            {outcome.needsSettings ? (
+              <>
+                {" "}
+                <button type="button" className="link" onClick={onOpenSettings}>
+                  Open model settings
+                </button>
+              </>
+            ) : null}
           </p>
         ) : null}
 
@@ -237,12 +260,18 @@ export const PayloadPreviewPanel = forwardRef<HTMLHeadingElement, PayloadPreview
             aria-busy={generating}
             onClick={generate}
           >
-            {generating ? "Requesting…" : "Generate capsule"}
+            {generating ? "Generating…" : "Generate capsule"}
           </button>
-          <button type="button" onClick={onCancel}>
-            Cancel
-          </button>
-          <DiscardDraftControl onConfirm={onDiscard} busy={busy} />
+          {generating ? (
+            <button type="button" onClick={() => void checkpointsApi.cancelGeneration()}>
+              Cancel generation
+            </button>
+          ) : (
+            <button type="button" onClick={onCancel}>
+              Back to the draft
+            </button>
+          )}
+          <DiscardDraftControl onConfirm={onDiscard} busy={locked} />
         </div>
       </section>
     );

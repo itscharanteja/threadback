@@ -26,7 +26,36 @@ const failure = (code: string, message: string, field: string | null = null): Fa
  * the UI depends on: notes and snapshots only while recording, and failures
  * rejected as the serialized error envelope.
  */
+const CAPSULE = {
+  schema_version: "1.0",
+  goal: "Find why retries create a second provider capture",
+  checkpoint_summary: "The focused test still produces two provider calls, and the retry middleware change did not help.",
+  verified_facts: [{ id: "fact_1", claim: "The focused retry test made two provider calls.", source_event_ids: ["evt-4"] }],
+  hypotheses: [{ id: "hyp_1", claim: "A second worker bypasses the distributed lock.", confidence: "medium", source_event_ids: [] }],
+  failed_attempts: [{ action: "Changed the retry middleware backoff.", outcome: "The test still failed.", learning: "Backoff does not change the call count.", source_event_ids: ["evt-4"] }],
+  unresolved_questions: ["Do both workers share the same lock backend?"],
+  relevant_artifacts: [{ type: "test", relative_path: "tests/payment-retry.test.mjs", reason: "Reproduces the duplicate call.", source_event_ids: [] }],
+  next_action: { instruction: "Log the lock owner in both workers and rerun the focused test.", justification: "The workers may not observe the same lock state.", success_check: "Both retries observe the same lock owner.", source_event_ids: [] },
+  limitations: ["The production lock backend was not inspected."],
+};
+
 export class FakeBackend {
+  /** What the settings screen shows. The key is never part of it. */
+  config = {
+    endpoint: "https://api.tokenfactory.nebius.com/v1",
+    modelId: "nvidia/nemotron-3-super-120b-a12b",
+    timeoutSecs: 60,
+    structuredOutput: "json_schema",
+    hasApiKey: false,
+    destinationHost: "api.tokenfactory.nebius.com",
+  };
+  /** Keys the interface sent, to check they travel only through `configuration_store`/`configuration_test`. */
+  keysSent: { command: string; key: string }[] = [];
+  testResult: { ok: boolean; message: string; latencyMs: number | null; modelId: string } | null = null;
+  /** When true, `checkpoints_generate` waits until released or cancelled. */
+  holdGenerate = false;
+  private pendingGenerate: { resolve: (value: unknown) => void; reject: (error: unknown) => void } | null = null;
+
   thread: WorkThread;
   events: ThreadEvent[] = [];
   checkpoints: Checkpoint[] = [];
@@ -153,6 +182,20 @@ export class FakeBackend {
     this.thread = { ...this.thread, state, updatedAt: new Date(Date.now() + this.counter).toISOString() };
   }
 
+  private validateConfig(input: { endpoint: string; modelId: string; timeoutSecs: number }) {
+    if (!/^https:\/\//.test(input.endpoint) && !/^http:\/\/(127\.0\.0\.1|localhost)/.test(input.endpoint)) {
+      throw failure("INVALID_INPUT", "The endpoint must use https.", "endpoint");
+    }
+    if (!input.modelId.trim()) throw failure("INVALID_INPUT", "The model ID must be 1 to 200 letters, digits, or . _ : / - characters.", "modelId");
+    if (input.timeoutSecs < 5 || input.timeoutSecs > 300) throw failure("INVALID_INPUT", "The timeout must be between 5 and 300 seconds.", "timeoutSecs");
+  }
+
+  /** Lets a held generation finish successfully. */
+  releaseGenerate() {
+    this.pendingGenerate?.resolve(null);
+    this.pendingGenerate = null;
+  }
+
   private requireRecording() {
     if (!this.recording) throw failure("INVALID_STATE", "This thread is not active, so it is not recording evidence.");
   }
@@ -255,7 +298,48 @@ export class FakeBackend {
         if (preview.hasBlockingFindings) throw failure("PAYLOAD_BLOCKED", "Something in this payload contains a credential.");
         if (preview.counts.included === 0) throw failure("PAYLOAD_BLOCKED", "Nothing is selected to send. Include at least one entry.");
         if (preview.payloadHash !== args.reviewedHash) throw failure("PAYLOAD_CHANGED", "What would be sent has changed since you reviewed it. Review it again.");
-        throw failure("NOT_CONFIGURED", "The model connection is not set up yet. Nothing was sent.");
+        if (!this.config.hasApiKey) throw failure("NOT_CONFIGURED", "Add your model API key in Settings before generating a capsule. Nothing was sent.");
+        const finish = () => {
+          const checkpoint = this.checkpoints.find((candidate) => candidate.id === args.checkpointId)!;
+          checkpoint.draft = CAPSULE as any;
+          checkpoint.status = "generated";
+          checkpoint.modelId = this.config.modelId;
+          checkpoint.promptVersion = "capsule-prompt-v1";
+          // A real backend returns a fresh object, not the stored one.
+          return JSON.parse(JSON.stringify(checkpoint));
+        };
+        if (!this.holdGenerate) return finish();
+        return new Promise((resolve, reject) => {
+          this.pendingGenerate = { resolve: () => resolve(finish()), reject };
+        });
+      }
+      case "checkpoints_cancel_generation":
+        this.pendingGenerate?.reject(failure("CANCELLED", "Generation was cancelled. Nothing more was sent."));
+        this.pendingGenerate = null;
+        return null;
+      case "configuration_status":
+        return { ...this.config };
+      case "configuration_store": {
+        this.validateConfig(args.input);
+        if (args.input.apiKey) {
+          this.keysSent.push({ command, key: args.input.apiKey });
+          this.config.hasApiKey = true;
+        }
+        const { apiKey: _ignored, ...settings } = args.input;
+        this.config = { ...this.config, ...settings, destinationHost: new URL(settings.endpoint).hostname };
+        return { ...this.config };
+      }
+      case "configuration_remove_key":
+        this.config.hasApiKey = false;
+        return { ...this.config };
+      case "configuration_test": {
+        this.validateConfig(args.input);
+        if (args.input.apiKey) this.keysSent.push({ command, key: args.input.apiKey });
+        if (this.testResult) return this.testResult;
+        if (!args.input.apiKey && !this.config.hasApiKey) {
+          return { ok: false, message: "Enter an API key first. Nothing was sent.", latencyMs: null, modelId: args.input.modelId };
+        }
+        return { ok: true, message: `Connected. ${args.input.modelId} answered in 412 ms.`, latencyMs: 412, modelId: args.input.modelId };
       }
       case "checkpoints_discard": {
         const checkpoint = this.checkpoints.find((candidate) => candidate.id === args.checkpointId)!;
