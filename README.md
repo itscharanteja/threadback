@@ -32,6 +32,31 @@ npm test
 npm run format
 ```
 
+## Model connection
+
+ThreadBack asks an NVIDIA Nemotron model on
+[Nebius Token Factory](https://tokenfactory.nebius.com) to write the resume
+capsule. This is the only network connection it makes, and it happens only when
+you press **Generate** after reviewing the exact payload.
+
+1. Create an account at <https://tokenfactory.nebius.com> and an API key. The
+   Nebius x NVIDIA hackathon offers Token Factory credits on its Devpost
+   resources page.
+2. In the app, open **Model**, paste the key, and press **Save**. The key goes
+   straight to the macOS Keychain. It is never shown again, never written to
+   ThreadBack's database, and never exported.
+3. Press **Test connection**. It sends one tiny question that contains none of
+   your evidence.
+
+Defaults: endpoint `https://api.tokenfactory.nebius.com/v1`, model
+`nvidia/nemotron-3-super-120b-a12b`, 60 second timeout, strict JSON-schema
+output (ThreadBack steps down to a simpler format on its own if the service
+rejects it). The endpoint must use `https`; plain `http` is accepted only for a
+loopback address, so a local server can stand in during development.
+
+The `tb` command has no network code at all: it is built without the model
+client and the Keychain adapter.
+
 ## Privacy boundary
 
 ThreadBack must not capture screenshots, keystrokes, global shell history, or

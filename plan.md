@@ -533,6 +533,31 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - Decision left to M-04: a valid capsule wrapped in prose or a markdown fence is not accepted as it stands. Whether to extract it or send it through the one repair attempt is for the validation step to decide.
 - Not yet: provenance (do the cited ids exist in this checkpoint's interval), artifact path checks, and the repair attempt (M-04); the model call (M-02).
 
+### Model connection and Keychain (M-01)
+
+- `ModelSettings` (endpoint, model ID, timeout, response format) is validated and stored in SQLite metadata. The endpoint must be `https`; plain `http` is accepted only for a loopback host (so a local server can stand in for tests), and credentials, a query, or a fragment in the URL are refused. Model IDs are limited to letters, digits, and `. _ : / -`; the timeout is 5 to 300 seconds. Defaults: `https://api.tokenfactory.nebius.com/v1`, `nvidia/nemotron-3-super-120b-a12b`, 60 seconds, strict JSON schema.
+- The API key lives only in the macOS Keychain, through the `SecretStore` adapter (`KeychainSecretStore`; an in-memory store for tests; no fallback to a file on other platforms). The key is write-only from the interface: `configuration.store` accepts it, nothing returned contains it (`ConfigurationStatus` says only `hasApiKey`), `ApiKey` and `ModelConfigInput` hide it in `Debug`/`Display`, and tests scan the database files for the key and any 10-character piece of it. A bad value changes nothing, not even the key. Saving without a key keeps the stored one.
+- Interface commands: `configuration.status`, `configuration.store`, `configuration.removeApiKey`, `configuration.test`. A connection test sends one tiny question that contains none of the user's evidence and saves nothing.
+- Defaults come from the hackathon documentation: Token Factory is OpenAI-compatible at `https://api.tokenfactory.nebius.com/v1`, authenticated with a bearer token, and structured output is `response_format: {type: "json_schema", json_schema: {name, schema, strict}}`. Model IDs other than Super come from third-party listings and were not verified.
+
+### Token Factory client (M-02)
+
+- `TokenFactoryClient` implements `CapsuleModel`. It posts to `{endpoint}/chat/completions` with the key as a bearer header marked sensitive, `temperature` 0, `max_tokens` 6,000, and the configured response format. Redirects are never followed. The response is read in chunks up to 2 MB. A leading `<think>…</think>` block in a reply is dropped.
+- Typed errors the interface can act on: `MODEL_AUTHENTICATION` (401, 403), `MODEL_RATE_LIMITED` (429, with the `Retry-After` seconds when given), `MODEL_NETWORK`, `MODEL_TIMEOUT` (also 408), `MODEL_SERVER` (5xx, a redirect, or an unreadable reply), `MODEL_REJECTED` (400, 404, and other 4xx, with the service's own explanation shortened and passed through redaction), `CANCELLED`, and `NOT_CONFIGURED`. No error message contains the key or any evidence.
+- If a 400 or 422 complains about the response format, the client steps down (schema, then JSON object, then none) and remembers it for the session, at most twice. The same messages are sent each time; only how JSON is asked for changes. Nothing else is retried.
+- Cancellation: a `CancelToken` aborts a request in flight (tested), and a request cancelled before it starts is never sent. The model commands are `async` and run their blocking work on a worker thread, because Tauri runs plain commands on the main thread and a long request would freeze the window. The database lock is not held while waiting for the model.
+- Diagnostics (`ModelCallRecord`) have only a model name, a host, a status label, an HTTP status, latency, token counts, a finish reason, the response format used, and the attempt number. They have no field that could hold the payload, the reply, or the authorization header. Each call is stored in the `model_calls` table (migration 0002), including failures and cancellations, which also gives the p50 and p95 latency for the evaluation report.
+- The network code and the Keychain adapter sit behind the `model-client` and `keychain` features, which `tb` does not enable: `tb`'s dependency tree contains no HTTP or TLS crates.
+
+### Generation and the stored draft
+
+- `plan_generation` (database), `run_generation` (network, no database), and `finish_generation` (database) split generation so the lock is never held during a request. `generate_draft` runs all three. The payload is authorized first, so a blocked, empty, or changed payload never reaches the model, and a missing key is reported only after the payload checks.
+- A valid capsule is stored once as the checkpoint's `draft` (status `generated`, `model_id`, `prompt_version`). The draft can never be overwritten: the database refuses a second write, and a second generation is refused before any request. A `checkpoint.generated` event records the model, prompt version, payload fingerprint, attempts, latency, and token counts, and none of the content.
+- A failed generation (two invalid replies, a service error, a cancellation) stores no draft and keeps the checkpoint as it was, so it can be retried. The calls are recorded either way.
+- A generated draft can still be discarded; approval and corrections are M-05.
+- Interface: the preview names the destination before anything is sent, locks the selection while a request is in flight, shows progress with a cancel button, and sends the user to the model settings when the key is missing or rejected. The generated capsule is shown read-only with facts, hypotheses, attempts, open questions, files, and limits in separate labelled sections.
+- Still open for Gate G3: a real call to Nemotron. Everything up to the network boundary is tested against a local server; the live call needs an API key.
+
 ### Validation and the single correction (M-04)
 
 - `evaluate(reply, context)` judges a reply in order: it must be one JSON object (a reply wrapped in prose or a code fence is rejected with a specific hint, not silently unwrapped), then match the schema, then deserialize into the strict `ResumeCapsule`, then pass the evidence checks below. Problems come back with a location, a kind, and a message, in a stable order, capped at 20.

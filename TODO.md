@@ -79,8 +79,8 @@
 - [x] C-01 Implement deterministic secret, private-key, credential-URL, and home-path redaction.
 - [x] C-02 Classify preview entries as included, excluded, blocked, or local-only.
 - [x] C-04 Build the exact outbound-payload preview and confirmation workflow.
-- [ ] M-01 Store the API key only in macOS Keychain and configure endpoint/model ID.
-- [ ] M-02 Implement the Token Factory client, cancellation, timeouts, and typed errors.
+- [x] M-01 Store the API key only in macOS Keychain and configure endpoint/model ID.
+- [x] M-02 Implement the Token Factory client, cancellation, timeouts, and typed errors.
 - [x] M-03 Create the versioned prompt and complete capsule schema.
 - [x] M-04 Validate shape, provenance, interval ownership, confidence, and artifact paths; allow one deterministic repair attempt.
 
