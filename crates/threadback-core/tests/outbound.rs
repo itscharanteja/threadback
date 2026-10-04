@@ -336,3 +336,87 @@ fn a_credential_in_a_checkpoint_written_directly_is_still_redacted_in_storage() 
     let preview = service.prepare(&forged.id, &[]).unwrap();
     assert!(!serde_json::to_string(&preview).unwrap().contains(SECRET));
 }
+
+#[test]
+fn the_preview_carries_the_exact_document_and_its_hash() {
+    use sha2::{Digest, Sha256};
+    let f = fixture();
+    note(&f, "one observation", NoteLabel::Fact);
+    let checkpoint = save(&f);
+    let preview = OutboundService::new(&f.db)
+        .prepare(&checkpoint.id, &[])
+        .unwrap();
+
+    assert_eq!(
+        preview.payload_json.len(),
+        preview.total_size_bytes as usize
+    );
+    let digest: String = Sha256::digest(preview.payload_json.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    assert_eq!(digest, preview.payload_hash);
+    let document: serde_json::Value = serde_json::from_str(&preview.payload_json).unwrap();
+    assert_eq!(document["goal"], preview.goal);
+    assert_eq!(
+        document["entries"].as_array().unwrap().len() as u32,
+        preview.counts.included
+    );
+}
+
+#[test]
+fn generation_is_gated_before_anything_else() {
+    let f = fixture();
+    note(&f, "fine", NoteLabel::Fact);
+    let culprit = note(&f, "ACME-123456", NoteLabel::Hypothesis);
+    let checkpoint = save(&f);
+    let redactor = custom();
+    let service = OutboundService::with_redactor(&f.db, &redactor);
+
+    // Blocked: refused as blocked, never reaching the connection.
+    let blocked = service.prepare(&checkpoint.id, &[]).unwrap();
+    let error = service
+        .generate(&checkpoint.id, &[], &blocked.payload_hash)
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::PayloadBlocked);
+
+    // Not what was reviewed: refused as changed.
+    let reviewed = service.prepare(&checkpoint.id, &[culprit.clone()]).unwrap();
+    let error = service
+        .generate(&checkpoint.id, &[], &reviewed.payload_hash)
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        ErrorCode::PayloadBlocked,
+        "the unreviewed selection is also blocked"
+    );
+    let error = service
+        .generate(&checkpoint.id, &[culprit.clone()], "stale")
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::PayloadChanged);
+
+    // Reviewed and clean: reaches the connection, which does not exist yet.
+    let error = service
+        .generate(&checkpoint.id, &[culprit], &reviewed.payload_hash)
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::NotConfigured);
+    assert!(error.message.contains("Nothing was sent"));
+}
+
+#[test]
+fn a_discarded_draft_cannot_be_previewed_or_generated() {
+    let f = fixture();
+    let checkpoint = save(&f);
+    CheckpointService::new(&f.db)
+        .discard(&checkpoint.id)
+        .unwrap();
+    let service = OutboundService::new(&f.db);
+    assert_eq!(
+        service.prepare(&checkpoint.id, &[]).unwrap_err().code,
+        ErrorCode::InvalidState
+    );
+    assert_eq!(
+        service.generate(&checkpoint.id, &[], "x").unwrap_err().code,
+        ErrorCode::InvalidState
+    );
+}

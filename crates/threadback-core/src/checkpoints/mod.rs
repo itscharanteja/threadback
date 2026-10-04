@@ -7,7 +7,7 @@ use ts_rs::TS;
 
 use crate::{
     Checkpoint, CheckpointId, Database, DomainError, EventId, EventPayload, ThreadId,
-    ThreadService,
+    ThreadService, WorkThread,
     threads::{
         lifecycle::{LifecycleAction, next_state},
         service::{apply_transition, require_thread},
@@ -18,6 +18,10 @@ pub use select::{SelectionLimits, build_payload};
 
 /// A checkpoint that exists only locally and has not been sent to a model.
 pub const STATUS_DRAFT: &str = "draft";
+
+/// A draft the user threw away. Its evidence is not consumed: the next
+/// checkpoint covers it again.
+pub const STATUS_DISCARDED: &str = "discarded";
 
 /// Why a checkpoint was requested.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -148,10 +152,11 @@ impl<'a> CheckpointService<'a> {
             next_state(&thread.state, action)?;
 
             let events = db.list_all_events(&thread.id)?;
+            // A discarded draft consumed nothing, so it does not move the start.
             let previous_end = db
                 .list_checkpoints(&thread.id)?
                 .into_iter()
-                .next()
+                .find(|checkpoint| checkpoint.status != STATUS_DISCARDED)
                 .map(|checkpoint| checkpoint.end_event_id);
             let start = previous_end
                 .and_then(|end| events.iter().position(|event| event.id == end))
@@ -205,6 +210,31 @@ impl<'a> CheckpointService<'a> {
                 )))
             })?;
             Ok(checkpoint)
+        })
+    }
+
+    /// Throws a draft away and returns the thread to recording. Nothing was
+    /// sent, so nothing needs undoing. Refused when the thread cannot record
+    /// again, for instance because another thread is already recording.
+    pub fn discard(&self, id: &CheckpointId) -> Result<WorkThread, DomainError> {
+        self.database.with_transaction(|db| {
+            let checkpoint = db
+                .find_checkpoint(id)?
+                .ok_or_else(|| DomainError::not_found("That checkpoint no longer exists."))?;
+            if checkpoint.status != STATUS_DRAFT {
+                return Err(DomainError::invalid_state(
+                    "Only a draft that has not been used can be discarded.",
+                ));
+            }
+            // Check the thread can resume before marking anything.
+            let thread =
+                apply_transition(db, &checkpoint.thread_id, LifecycleAction::Discard, |_| {
+                    Ok(Some(EventPayload::CheckpointDiscarded(serde_json::json!({
+                        "checkpointId": checkpoint.id,
+                    }))))
+                })?;
+            db.update_checkpoint_status(id, STATUS_DISCARDED)?;
+            Ok(thread)
         })
     }
 

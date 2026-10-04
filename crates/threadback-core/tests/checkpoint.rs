@@ -477,3 +477,140 @@ fn unknown_checkpoint_is_not_found() {
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::NotFound);
 }
+
+// ---- Discarding a draft ----
+
+use threadback_core::{EventPayload as Payload, STATUS_DISCARDED};
+
+#[test]
+fn discarding_a_draft_returns_the_thread_to_recording() {
+    let repo = repository();
+    let db = Database::open_in_memory().unwrap();
+    let id = start(&db, &approve(&db, repo.path()));
+    let service = CheckpointService::new(&db);
+    let checkpoint = service.save(&id, CheckpointTrigger::Manual).unwrap();
+    assert_eq!(
+        db.find_thread(&id).unwrap().unwrap().state,
+        ThreadState::CheckpointDraft
+    );
+
+    let thread = service.discard(&checkpoint.id).unwrap();
+    assert_eq!(thread.state, ThreadState::Active);
+    assert_eq!(
+        db.find_thread(&id).unwrap().unwrap().state,
+        ThreadState::Active
+    );
+    assert_eq!(
+        service.get(&checkpoint.id).unwrap().status,
+        STATUS_DISCARDED
+    );
+
+    // The discard is part of the thread's history.
+    let events = db.list_all_events(&id).unwrap();
+    let Payload::CheckpointDiscarded(value) = &events.last().unwrap().payload else {
+        panic!("the last event should record the discard");
+    };
+    assert_eq!(value["checkpointId"], checkpoint.id.0);
+
+    // Evidence is accepted again.
+    note(&db, &id, "back at work", NoteLabel::Fact);
+}
+
+#[test]
+fn discarding_a_draft_made_by_ending_reopens_the_thread() {
+    let repo = repository();
+    let db = Database::open_in_memory().unwrap();
+    let id = start(&db, &approve(&db, repo.path()));
+    let service = CheckpointService::new(&db);
+    let checkpoint = service.save(&id, CheckpointTrigger::ThreadEnded).unwrap();
+    assert!(db.find_thread(&id).unwrap().unwrap().ended_at.is_some());
+
+    let thread = service.discard(&checkpoint.id).unwrap();
+    assert_eq!(thread.state, ThreadState::Active);
+    assert!(
+        thread.ended_at.is_none(),
+        "an ended thread that is reopened is not ended"
+    );
+    assert!(db.find_thread(&id).unwrap().unwrap().ended_at.is_none());
+}
+
+#[test]
+fn a_discarded_draft_does_not_consume_its_evidence() {
+    let repo = repository();
+    let db = Database::open_in_memory().unwrap();
+    let id = start(&db, &approve(&db, repo.path()));
+    let service = CheckpointService::new(&db);
+
+    note(&db, &id, "before the first draft", NoteLabel::Fact);
+    let discarded = service.save(&id, CheckpointTrigger::Manual).unwrap();
+    service.discard(&discarded.id).unwrap();
+    note(&db, &id, "after the discard", NoteLabel::Hypothesis);
+    let second = service.save(&id, CheckpointTrigger::Manual).unwrap();
+
+    let texts: Vec<String> = payload(&second)
+        .entries
+        .iter()
+        .filter(|e| e.kind == "note.added")
+        .map(|e| e.content["text"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(texts, ["before the first draft", "after the discard"]);
+    assert_eq!(
+        second.start_event_id, discarded.start_event_id,
+        "the interval starts where the first would have"
+    );
+    // Newest first, and the discarded one is still on record.
+    let all = service.list(&id).unwrap();
+    assert_eq!(
+        (all[0].status.as_str(), all[1].status.as_str()),
+        (STATUS_DRAFT, STATUS_DISCARDED)
+    );
+}
+
+#[test]
+fn only_an_unused_draft_can_be_discarded_and_only_once() {
+    let repo = repository();
+    let db = Database::open_in_memory().unwrap();
+    let id = start(&db, &approve(&db, repo.path()));
+    let service = CheckpointService::new(&db);
+    let checkpoint = service.save(&id, CheckpointTrigger::Manual).unwrap();
+    service.discard(&checkpoint.id).unwrap();
+
+    let error = service.discard(&checkpoint.id).unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidState);
+    assert_eq!(
+        service
+            .discard(&threadback_core::CheckpointId::new())
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+}
+
+#[test]
+fn a_draft_cannot_be_discarded_while_another_thread_is_recording() {
+    let repo = repository();
+    let db = Database::open_in_memory().unwrap();
+    let project_id = approve(&db, repo.path());
+    let first = start(&db, &project_id);
+    let service = CheckpointService::new(&db);
+    let checkpoint = service.save(&first, CheckpointTrigger::Manual).unwrap();
+    let second = start(&db, &project_id);
+
+    let error = service.discard(&checkpoint.id).unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidState);
+    assert!(
+        error
+            .message
+            .contains("Another thread is already recording")
+    );
+    // Nothing changed: the draft is still a draft and the first thread is still drafting.
+    assert_eq!(service.get(&checkpoint.id).unwrap().status, STATUS_DRAFT);
+    assert_eq!(
+        db.find_thread(&first).unwrap().unwrap().state,
+        ThreadState::CheckpointDraft
+    );
+    assert_eq!(
+        db.find_thread(&second).unwrap().unwrap().state,
+        ThreadState::Active
+    );
+}

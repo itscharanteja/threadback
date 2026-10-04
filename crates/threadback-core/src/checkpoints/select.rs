@@ -80,6 +80,7 @@ pub fn build_payload(
                 EventPayload::CheckpointRequested(_)
                     | EventPayload::CheckpointGenerated(_)
                     | EventPayload::CheckpointApproved(_)
+                    | EventPayload::CheckpointDiscarded(_)
             ) {
                 omissions.unreadable += 1;
             }
@@ -292,7 +293,8 @@ fn condense(event: &ThreadEvent) -> Option<Value> {
         EventPayload::FileChanged(value) => Some(value.clone()),
         EventPayload::CheckpointRequested(_)
         | EventPayload::CheckpointGenerated(_)
-        | EventPayload::CheckpointApproved(_) => None,
+        | EventPayload::CheckpointApproved(_)
+        | EventPayload::CheckpointDiscarded(_) => None,
     }
 }
 

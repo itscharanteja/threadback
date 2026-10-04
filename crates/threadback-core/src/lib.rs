@@ -11,7 +11,7 @@ pub mod threads;
 
 pub use checkpoints::{
     CheckpointEntry, CheckpointPayload, CheckpointRequestedPayload, CheckpointService,
-    CheckpointTrigger, Omissions, STATUS_DRAFT, SnapshotStatus,
+    CheckpointTrigger, Omissions, STATUS_DISCARDED, STATUS_DRAFT, SnapshotStatus,
 };
 pub use collectors::{
     CaptureLimits, ChangedPath, CommandFinishedPayload, CommandRequest, CommandStartedPayload,

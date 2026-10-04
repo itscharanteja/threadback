@@ -200,6 +200,7 @@ pub enum EventPayload {
     CheckpointRequested(Value),
     CheckpointGenerated(Value),
     CheckpointApproved(Value),
+    CheckpointDiscarded(Value),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

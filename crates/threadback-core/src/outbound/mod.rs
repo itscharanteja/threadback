@@ -76,6 +76,8 @@ pub struct PayloadPreview {
     pub notices: Vec<String>,
     /// Size of everything that would be sent.
     pub total_size_bytes: u32,
+    /// The exact JSON document that would be sent, as serialized.
+    pub payload_json: String,
     /// Identifies exactly what would be sent. Approval must present it back.
     pub payload_hash: String,
     pub has_blocking_findings: bool,
@@ -212,6 +214,24 @@ impl<'a> OutboundService<'a> {
         })
     }
 
+    /// Asks for a capsule to be generated from the reviewed payload. The
+    /// reviewed payload is authorized first, so a blocked, empty, or changed
+    /// payload is refused here whatever the caller does.
+    ///
+    /// The model connection is not built yet, so a payload that passes every
+    /// check ends in `NOT_CONFIGURED` and nothing is sent.
+    pub fn generate(
+        &self,
+        checkpoint_id: &CheckpointId,
+        excluded: &[EventId],
+        reviewed_hash: &str,
+    ) -> Result<(), DomainError> {
+        let _approved = self.authorize(checkpoint_id, excluded, reviewed_hash)?;
+        Err(DomainError::not_configured(
+            "The model connection is not set up yet. Nothing was sent.",
+        ))
+    }
+
     fn assemble(
         &self,
         checkpoint_id: &CheckpointId,
@@ -221,6 +241,11 @@ impl<'a> OutboundService<'a> {
             .database
             .find_checkpoint(checkpoint_id)?
             .ok_or_else(|| DomainError::not_found("That checkpoint no longer exists."))?;
+        if checkpoint.status == crate::STATUS_DISCARDED {
+            return Err(DomainError::invalid_state(
+                "That draft was discarded, so there is nothing to send.",
+            ));
+        }
         let payload: CheckpointPayload = serde_json::from_value(checkpoint.payload.clone())
             .map_err(|_| DomainError::internal("The checkpoint draft could not be read."))?;
 
@@ -414,6 +439,7 @@ fn build(
         can_generate: !has_blocking_findings && counts.included > 0,
         has_blocking_findings,
         total_size_bytes: json.len().min(u32::MAX as usize) as u32,
+        payload_json: json.clone(),
         payload_hash,
         counts,
         notices,

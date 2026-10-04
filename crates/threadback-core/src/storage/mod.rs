@@ -626,6 +626,20 @@ impl Database {
             .map_err(storage_error)
     }
 
+    pub fn update_checkpoint_status(
+        &self,
+        id: &CheckpointId,
+        status: &str,
+    ) -> Result<(), DomainError> {
+        self.connection
+            .execute(
+                "UPDATE checkpoints SET status = ?1 WHERE id = ?2",
+                params![status, id.0],
+            )
+            .map_err(storage_error)?;
+        Ok(())
+    }
+
     pub fn insert_correction(&self, correction: &Correction) -> Result<(), DomainError> {
         let before = serde_json::to_string(&correction.before).map_err(json_error)?;
         let after = serde_json::to_string(&correction.after).map_err(json_error)?;
@@ -720,6 +734,7 @@ pub(crate) fn event_type(payload: &EventPayload) -> &'static str {
         EventPayload::CheckpointRequested(_) => "checkpoint.requested",
         EventPayload::CheckpointGenerated(_) => "checkpoint.generated",
         EventPayload::CheckpointApproved(_) => "checkpoint.approved",
+        EventPayload::CheckpointDiscarded(_) => "checkpoint.discarded",
     }
 }
 

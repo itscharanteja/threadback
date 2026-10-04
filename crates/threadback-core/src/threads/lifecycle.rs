@@ -17,6 +17,8 @@ pub enum LifecycleAction {
     /// Capsule generation failed; the local checkpoint is kept for a retry.
     MarkFailed,
     Retry,
+    /// The user threw away a checkpoint draft and keeps working.
+    Discard,
     Archive,
     Delete,
 }
@@ -46,6 +48,7 @@ pub fn next_state(
         (A::MarkReady, S::CheckpointDraft) => S::Ready,
         (A::MarkFailed, S::CheckpointDraft) => S::Failed,
         (A::Retry, S::Failed) => S::CheckpointDraft,
+        (A::Discard, S::CheckpointDraft | S::Failed) => S::Active,
         (A::Archive, S::Ready | S::Resumed | S::Paused | S::Failed) => S::Archived,
         (A::Delete, state) if *state != S::Deleted => S::Deleted,
         _ => {
@@ -81,6 +84,7 @@ fn action_label(action: LifecycleAction) -> &'static str {
         LifecycleAction::MarkReady => "be marked ready",
         LifecycleAction::MarkFailed => "be marked failed",
         LifecycleAction::Retry => "retry its checkpoint",
+        LifecycleAction::Discard => "discard a checkpoint",
         LifecycleAction::Archive => "be archived",
         LifecycleAction::Delete => "be deleted",
     }
@@ -103,7 +107,7 @@ mod tests {
         S::Failed,
         S::Deleted,
     ];
-    const ALL_ACTIONS: [LifecycleAction; 9] = [
+    const ALL_ACTIONS: [LifecycleAction; 10] = [
         A::Pause,
         A::Resume,
         A::End,
@@ -111,6 +115,7 @@ mod tests {
         A::MarkReady,
         A::MarkFailed,
         A::Retry,
+        A::Discard,
         A::Archive,
         A::Delete,
     ];
@@ -131,6 +136,8 @@ mod tests {
             (S::CheckpointDraft, A::MarkReady, S::Ready),
             (S::CheckpointDraft, A::MarkFailed, S::Failed),
             (S::Failed, A::Retry, S::CheckpointDraft),
+            (S::CheckpointDraft, A::Discard, S::Active),
+            (S::Failed, A::Discard, S::Active),
             (S::Ready, A::Archive, S::Archived),
             (S::Resumed, A::Archive, S::Archived),
             (S::Paused, A::Archive, S::Archived),

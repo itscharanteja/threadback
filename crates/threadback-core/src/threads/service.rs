@@ -241,6 +241,8 @@ pub(crate) fn apply_transition(
     let now = Utc::now();
     let ended_at = match (action, &next) {
         (LifecycleAction::Resume, ThreadState::Resumed) => None,
+        // Back to work: the thread is no longer ended.
+        (LifecycleAction::Discard, _) => None,
         (LifecycleAction::End | LifecycleAction::Archive, _) => thread.ended_at.or(Some(now)),
         _ => thread.ended_at,
     };

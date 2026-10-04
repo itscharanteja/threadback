@@ -12,6 +12,8 @@ pub enum ErrorCode {
     PayloadBlocked,
     /// What would be sent is no longer what the user reviewed.
     PayloadChanged,
+    /// The model connection has not been set up.
+    NotConfigured,
     StorageUnavailable,
     Internal,
 }
@@ -76,6 +78,15 @@ impl DomainError {
             code: ErrorCode::PayloadChanged,
             message: message.into(),
             retryable: true,
+            field: None,
+        }
+    }
+
+    pub fn not_configured(message: impl Into<String>) -> Self {
+        Self {
+            code: ErrorCode::NotConfigured,
+            message: message.into(),
+            retryable: false,
             field: None,
         }
     }
