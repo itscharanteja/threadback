@@ -533,6 +533,23 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - Decision left to M-04: a valid capsule wrapped in prose or a markdown fence is not accepted as it stands. Whether to extract it or send it through the one repair attempt is for the validation step to decide.
 - Not yet: provenance (do the cited ids exist in this checkpoint's interval), artifact path checks, and the repair attempt (M-04); the model call (M-02).
 
+### Validation and the single correction (M-04)
+
+- `evaluate(reply, context)` judges a reply in order: it must be one JSON object (a reply wrapped in prose or a code fence is rejected with a specific hint, not silently unwrapped), then match the schema, then deserialize into the strict `ResumeCapsule`, then pass the evidence checks below. Problems come back with a location, a kind, and a message, in a stable order, capped at 20.
+- Evidence checks (`validate_capsule`, also meant to run when a person edits a capsule, so an edit cannot create an unsupported fact):
+  - **Provenance and interval ownership**: every cited id, in every section, must be one of the entries the user approved. An id that is in the checkpoint but was excluded, blocked, or kept local gets its own message ("was not part of the evidence you approved"); anything else is "not an event in this checkpoint".
+  - **Unsupported facts**: a verified fact whose only sources are notes the developer labelled hypothesis, question, or next step is rejected. A fact needs at least one source that can support it.
+  - **Confidence**: only `low`, `medium`, `high` (schema).
+  - **Artifact paths**: relative, forward slashes, no `..`, no stray whitespace, not the project folder itself, inside the project (symlinks resolved) and not a path ThreadBack never captures (`.env`, keys, `node_modules`, `.git`, binaries).
+  - **Repeated ids** within verified facts or hypotheses.
+  - **Credentials**: any text that looks like a credential anywhere in the capsule. The message never repeats the credential.
+- `build_repair_prompt` is a pure function of the original request, the reply, and the problems, so the correction is deterministic. It carries over the system message and the original evidence message unchanged, returns the reply being corrected as the model's turn, and adds a fixed instruction with the numbered problems (one line each, at most 20, each at most 300 characters). The returned reply is cut at 20,000 characters.
+- `generate_capsule(model, request, context)` makes at most two model calls: the reply, and one correction if the reply failed. A second failure returns `InvalidOutput` with both sets of problems and the last reply, converted to a visible `INVALID_MODEL_OUTPUT` error ("even after one correction… your checkpoint is kept and nothing was approved… you can try again"). A failure to reach the model passes through unchanged and is never treated as a bad reply. A capsule is returned only when it passed every check.
+- `CapsuleModel` is the seam for the model call. M-02 implements it for Token Factory; tests script it.
+- `OutboundService::validation_context` builds the context from the approved payload and the checkpoint, so withheld entries are known.
+- Prompt-injection replies from the M-03 fixtures are corrected when the second reply is genuine and rejected when they are obeyed twice.
+- Still open: persisting a failed generation and its problems on the checkpoint (M-05), and the "Needs Review" presentation of unsupported items (U-03).
+
 ### Payload preview and discarding a draft (C-04)
 
 - From a checkpoint draft, **Review what will be sent…** opens the preview. It states that nothing has been sent, lists every entry with a per-entry checkbox, shows each entry's size, state (in words and a glyph), reason, and redaction tag, and offers the exact content of each entry and the complete payload as one document with its fingerprint.

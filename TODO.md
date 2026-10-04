@@ -82,7 +82,7 @@
 - [ ] M-01 Store the API key only in macOS Keychain and configure endpoint/model ID.
 - [ ] M-02 Implement the Token Factory client, cancellation, timeouts, and typed errors.
 - [x] M-03 Create the versioned prompt and complete capsule schema.
-- [ ] M-04 Validate shape, provenance, interval ownership, confidence, and artifact paths; allow one deterministic repair attempt.
+- [x] M-04 Validate shape, provenance, interval ownership, confidence, and artifact paths; allow one deterministic repair attempt.
 
 ### Gate G3 — Private model call
 
