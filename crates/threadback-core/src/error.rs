@@ -14,6 +14,8 @@ pub enum ErrorCode {
     PayloadChanged,
     /// The model connection has not been set up.
     NotConfigured,
+    /// The model's reply did not meet the capsule contract, even after one correction.
+    InvalidModelOutput,
     StorageUnavailable,
     Internal,
 }
@@ -87,6 +89,15 @@ impl DomainError {
             code: ErrorCode::NotConfigured,
             message: message.into(),
             retryable: false,
+            field: None,
+        }
+    }
+
+    pub fn invalid_model_output(message: impl Into<String>) -> Self {
+        Self {
+            code: ErrorCode::InvalidModelOutput,
+            message: message.into(),
+            retryable: true,
             field: None,
         }
     }

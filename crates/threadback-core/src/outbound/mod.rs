@@ -231,6 +231,36 @@ impl<'a> OutboundService<'a> {
         })
     }
 
+    /// The context a reply is judged in: the entries the user approved are the
+    /// only ones it may cite, and the other entries of the same checkpoint are
+    /// known to have been withheld.
+    pub fn validation_context(
+        &self,
+        approved: &ApprovedPayload,
+        boundary: crate::ProjectBoundary,
+    ) -> Result<crate::ValidationContext, DomainError> {
+        let checkpoint = self
+            .database
+            .find_checkpoint(approved.checkpoint_id())?
+            .ok_or_else(|| DomainError::not_found("That checkpoint no longer exists."))?;
+        let payload: CheckpointPayload = serde_json::from_value(checkpoint.payload)
+            .map_err(|_| DomainError::internal("The checkpoint draft could not be read."))?;
+        let sent: HashSet<&EventId> = approved
+            .document()
+            .entries
+            .iter()
+            .map(|e| &e.event_id)
+            .collect();
+        let withheld = payload
+            .entries
+            .iter()
+            .filter(|entry| !sent.contains(&entry.event_id))
+            .map(|entry| entry.event_id.clone());
+        Ok(crate::ValidationContext::from_approved(
+            approved, withheld, boundary,
+        ))
+    }
+
     /// Asks for a capsule to be generated from the reviewed payload. The
     /// reviewed payload is authorized first, so a blocked, empty, or changed
     /// payload is refused here whatever the caller does.

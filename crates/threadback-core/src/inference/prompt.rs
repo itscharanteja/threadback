@@ -56,6 +56,8 @@ pub struct PromptRequest {
     pub response_schema: Value,
     /// The reviewed payload this request carries.
     pub payload_hash: String,
+    /// 1 for the first request, 2 for the single correction.
+    pub attempt: u8,
 }
 
 /// The line that opens the evidence block and the line that closes it. A
@@ -130,6 +132,7 @@ pub fn build_prompt(approved: &ApprovedPayload) -> Result<PromptRequest, DomainE
         ],
         response_schema: schema,
         payload_hash: approved.hash().to_owned(),
+        attempt: 1,
     })
 }
 

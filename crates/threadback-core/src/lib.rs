@@ -23,8 +23,10 @@ pub use collectors::{
 pub use domain::*;
 pub use error::{DomainError, ErrorCode};
 pub use inference::{
-    CapsuleSchema, ChatMessage, PROMPT_VERSION, PromptRequest, SCHEMA_VERSION, SchemaIssue,
-    build_prompt, capsule_schema,
+    CapsuleModel, CapsuleSchema, ChatMessage, Evaluation, GeneratedCapsule, GenerationFailure,
+    InvalidOutput, MAX_VIOLATIONS, ModelReply, PROMPT_VERSION, PromptRequest, SCHEMA_VERSION,
+    SchemaIssue, ShownEntry, ValidationContext, Violation, ViolationKind, build_prompt,
+    build_repair_prompt, capsule_schema, evaluate, generate_capsule, summarize, validate_capsule,
 };
 pub use outbound::{
     ApprovedPayload, OutboundEntry, OutboundInterval, OutboundPayload, OutboundService,
