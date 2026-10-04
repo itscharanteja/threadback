@@ -492,6 +492,20 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - The app and `tb` share one database path from `threadback_core::database_path()` (`THREADBACK_DB` overrides it).
 - Known limits: the command sees pipes instead of a terminal, so tools may drop colour and progress bars, and commands are not redacted until C-01 lands, so stored command text and output are unredacted on this computer. Nothing leaves the computer before the payload preview exists.
 
+### Redaction (C-01)
+
+- `privacy::Redactor` is deterministic and idempotent. It replaces private-key blocks (including unterminated blocks and a lone END marker), authorization and bearer credentials, passwords embedded in URLs, token-like query parameters, well-known provider tokens (OpenAI-style, GitHub, GitLab, Slack, AWS, Google, npm, Hugging Face, SendGrid), JWTs, `<prefix>_<live|test|demo|prod|secret>_<body>` keys (a digit is required, so snake_case identifiers are left alone), and the value in `name = value` assignments whose name suggests a secret. It fails closed: only placeholders, literals, and references (`$VAR`, `process.env.X`, `true`) are left alone.
+- Credentials become `[REDACTED:<kind>]`. Home-directory prefixes (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`, and the current `$HOME`) become `~`; this is not counted as a credential. User patterns (regular expressions, at most 50 of 200 characters, none that match empty text) are supported by `Redactor::new`; wiring them to per-project policy comes with U-05.
+- Redaction is applied in three layers so no path can bypass it:
+  1. `ThreadEvent::new` redacts the payload before hashing, so neither the stored text nor the content hash depends on a secret. An event that contained a credential is marked `Sensitive`.
+  2. `Database::insert_event` redacts again as a backstop and recomputes the hash, so an event built any other way is still stored clean. Thread titles and goals are redacted too.
+  3. Command output is redacted line by line as it streams, before any head/tail cut, so a cut cannot split a credential in two. The terminal still receives the raw output.
+- `originalBytes` is what the command wrote; `omittedBytes` is counted against the redacted text, and `redactions` counts the credentials replaced in a stream.
+- `Database::open` runs a one-time, versioned scrub (`REDACTION_VERSION`) that rewrites rows stored before redaction existed, then truncates the write-ahead log and vacuums so the old bytes leave the file. Bump the version whenever the rules change.
+- Outbound policy (C-02): redaction at capture means a stored credential is already replaced. The check before sending scans again; any credential still found (a legacy row, or text the user edited into the preview) is **blocking** and disables generation until it is removed or excluded.
+- Known limits: a credential written in free prose ("my password is hunter2"), a bare high-entropy string with no recognisable prefix or name, and a private-key body pasted without its BEGIN or END marker are not detected. A secret split across two output lines other than a PEM block is not joined.
+- Performance: about 75 MB/s through the stream in an optimized build. The regex crates are built with optimizations even in dev and test builds, because unoptimized they slowed `tb` output to a few MB/s.
+
 ### Demo fixture (R-02b)
 
 - `npm run demo:reset` recreates `fixtures/demo-repo/workspace` (or a folder passed as an argument) with fixed author, committer, and dates, so the seeded commit hash is identical every time.
