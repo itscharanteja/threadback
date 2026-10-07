@@ -30,9 +30,9 @@ const CAPSULE = {
   schema_version: "1.0",
   goal: "Find why retries create a second provider capture",
   checkpoint_summary: "The focused test still produces two provider calls, and the retry middleware change did not help.",
-  verified_facts: [{ id: "fact_1", claim: "The focused retry test made two provider calls.", source_event_ids: ["evt-4"] }],
+  verified_facts: [{ id: "fact_1", claim: "The focused retry test made two provider calls.", source_event_ids: ["evt-2"] }],
   hypotheses: [{ id: "hyp_1", claim: "A second worker bypasses the distributed lock.", confidence: "medium", source_event_ids: [] }],
-  failed_attempts: [{ action: "Changed the retry middleware backoff.", outcome: "The test still failed.", learning: "Backoff does not change the call count.", source_event_ids: ["evt-4"] }],
+  failed_attempts: [{ action: "Changed the retry middleware backoff.", outcome: "The test still failed.", learning: "Backoff does not change the call count.", source_event_ids: ["evt-2"] }],
   unresolved_questions: ["Do both workers share the same lock backend?"],
   relevant_artifacts: [{ type: "test", relative_path: "tests/payment-retry.test.mjs", reason: "Reproduces the duplicate call.", source_event_ids: [] }],
   next_action: { instruction: "Log the lock owner in both workers and rerun the focused test.", justification: "The workers may not observe the same lock state.", success_check: "Both retries observe the same lock owner.", source_event_ids: [] },
@@ -57,6 +57,36 @@ export class FakeBackend {
   private pendingGenerate: { resolve: (value: unknown) => void; reject: (error: unknown) => void } | null = null;
 
   thread: WorkThread;
+  deletedThreads: string[] = [];
+  projectsList = [
+    {
+      id: "project-1",
+      displayName: "Payments",
+      canonicalRoot: "/workspace/payments",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  ];
+  policy = {
+    projectId: "project-1",
+    exclusions: ["fixtures/sensitive/**"],
+    retentionDays: 14,
+    captureGit: true,
+    captureCommands: true,
+    captureFileMetadata: true,
+    redactionPatterns: [] as string[],
+  };
+  drift = {
+    checked: true,
+    hasDrift: false,
+    summary: "Repository matches the checkpoint snapshot (same branch, HEAD, and working tree).",
+    signals: [] as { kind: string; label: string; before: string | null; after: string | null }[],
+    checkpointSnapshot: null as any,
+    currentSnapshot: null as any,
+  };
+  artifactFiles = new Map<string, string>([
+    ["tests/payment-retry.test.mjs", "// Focused payment retry test\nassert.equal(calls, 1);\n"],
+  ]);
   events: ThreadEvent[] = [];
   checkpoints: Checkpoint[] = [];
   calls: { command: string; args: any }[] = [];
@@ -142,6 +172,48 @@ export class FakeBackend {
       hasBlockingFindings: count("blocked") > 0,
       canGenerate: count("blocked") === 0 && included.length > 0,
     };
+  }
+
+  /** The capsule the fake "model" returns; tests can replace it. */
+  capsule: any = CAPSULE;
+  corrections = new Map<string, any[]>();
+
+  /** The server's approval rules that the UI depends on: every source exists, and facts rest on real support. */
+  private checkRules(checkpoint: Checkpoint, capsule: any) {
+    const entries = (checkpoint.payload as any).entries as { eventId: string; kind: string; content: any }[];
+    const byId = new Map(entries.map((entry) => [entry.eventId, entry]));
+    const unproven = ["hypothesis", "question", "next_step"];
+    const reject = (path: string, message: string) => {
+      throw failure("INVALID_CAPSULE", `This capsule cannot be approved yet. ${path}: ${message}`, path);
+    };
+    capsule.verified_facts.forEach((fact: any, index: number) => {
+      const path = `/verified_facts/${index}/source_event_ids`;
+      if (fact.source_event_ids.length === 0) reject(path, "a verified fact needs at least one source.");
+      const missing = fact.source_event_ids.find((id: string) => !byId.has(id));
+      if (missing) reject(path, `${missing} is not an event in this checkpoint.`);
+      const supported = fact.source_event_ids.some((id: string) => {
+        const entry = byId.get(id)!;
+        return entry.kind !== "note.added" || !unproven.includes(entry.content?.label);
+      });
+      if (!supported) reject(path, "it rests only on notes labelled hypothesis, question, or next step.");
+      if (!fact.claim.trim()) reject(`/verified_facts/${index}/claim`, "the claim is empty.");
+    });
+    if (!capsule.next_action.instruction.trim()) reject("/next_action/instruction", "the instruction is empty.");
+  }
+
+  /** A simplified derivation: one correction per top-level section that differs. */
+  private deriveCorrections(checkpoint: Checkpoint, draft: any, approved: any) {
+    return Object.keys(approved)
+      .filter((key) => JSON.stringify(draft[key]) !== JSON.stringify(approved[key]))
+      .map((key, index) => ({
+        id: `correction-${index + 1}`,
+        checkpointId: checkpoint.id,
+        fieldPath: `/${key}`,
+        before: draft[key],
+        after: approved[key],
+        reason: null,
+        createdAt: new Date().toISOString(),
+      }));
   }
 
   callsTo(command: string) {
@@ -301,7 +373,7 @@ export class FakeBackend {
         if (!this.config.hasApiKey) throw failure("NOT_CONFIGURED", "Add your model API key in Settings before generating a capsule. Nothing was sent.");
         const finish = () => {
           const checkpoint = this.checkpoints.find((candidate) => candidate.id === args.checkpointId)!;
-          checkpoint.draft = CAPSULE as any;
+          checkpoint.draft = JSON.parse(JSON.stringify(this.capsule));
           checkpoint.status = "generated";
           checkpoint.modelId = this.config.modelId;
           checkpoint.promptVersion = "capsule-prompt-v1";
@@ -343,12 +415,154 @@ export class FakeBackend {
       }
       case "checkpoints_discard": {
         const checkpoint = this.checkpoints.find((candidate) => candidate.id === args.checkpointId)!;
-        if (checkpoint.status !== "draft") throw failure("INVALID_STATE", "Only a draft that has not been used can be discarded.");
+        if (checkpoint.status !== "draft" && checkpoint.status !== "generated") {
+          throw failure("INVALID_STATE", "Only a draft that has not been approved can be discarded.");
+        }
         checkpoint.status = "discarded";
         this.add({ type: "checkpoint_discarded", payload: { checkpointId: checkpoint.id } } as any);
         this.setState("ACTIVE");
         return this.thread;
       }
+      case "checkpoints_approve": {
+        const checkpoint = this.checkpoints.find((candidate) => candidate.id === args.checkpointId)!;
+        if (checkpoint.status === "approved") throw failure("INVALID_STATE", "This capsule was already approved.");
+        if (checkpoint.status !== "generated" || !checkpoint.draft) {
+          throw failure("INVALID_STATE", "There is no generated capsule to approve yet.");
+        }
+        const capsule = args.capsule as typeof CAPSULE;
+        this.checkRules(checkpoint, capsule);
+        const corrections = this.deriveCorrections(checkpoint, checkpoint.draft as any, capsule);
+        checkpoint.approved = JSON.parse(JSON.stringify(capsule));
+        checkpoint.status = "approved";
+        checkpoint.approvedAt = new Date().toISOString();
+        this.corrections.set(checkpoint.id, corrections);
+        this.add({ type: "checkpoint_approved", payload: { checkpointId: checkpoint.id, correctionCount: corrections.length } } as any);
+        this.setState("READY");
+        return { checkpoint: JSON.parse(JSON.stringify(checkpoint)), thread: this.thread, corrections };
+      }
+      case "checkpoints_corrections":
+        return this.corrections.get(args.checkpointId) ?? [];
+      case "checkpoints_get_resume": {
+        const checkpoint = this.checkpoints.find((candidate) => candidate.id === args.checkpointId) ?? this.checkpoints[0];
+        if (!checkpoint) throw failure("NOT_FOUND", "That checkpoint no longer exists.");
+        return {
+          thread: this.thread,
+          checkpoint: JSON.parse(JSON.stringify(checkpoint)),
+          corrections: this.corrections.get(checkpoint.id) ?? [],
+          drift: JSON.parse(JSON.stringify(this.drift)),
+        };
+      }
+      case "checkpoints_open_artifact": {
+        const checkpoint = this.checkpoints.find((candidate) => candidate.id === args.checkpointId) ?? this.checkpoints[0];
+        if (!checkpoint || checkpoint.status !== "approved") {
+          throw failure("INVALID_STATE", "Artifacts can only be opened from an approved capsule.");
+        }
+        const rel = String(args.relativePath ?? "");
+        const content = this.artifactFiles.get(rel) ?? null;
+        return {
+          relativePath: rel,
+          resolvedPath: `/workspace/payments/${rel}`,
+          exists: content !== null,
+          contentPreview: content,
+          truncated: false,
+        };
+      }
+      case "exports_json": {
+        const checkpoint = this.checkpoints.find((candidate) => candidate.id === args.checkpointId)!;
+        if (!checkpoint || checkpoint.status !== "approved" || !checkpoint.approved) {
+          throw failure("INVALID_STATE", "Only an approved capsule can be exported.");
+        }
+        const jsonText = JSON.stringify(checkpoint.approved, null, 2);
+        return {
+          path: `/exports/${this.thread.id}/capsule-${checkpoint.id}.json`,
+          format: "json",
+          bytes: jsonText.length,
+        };
+      }
+      case "exports_markdown": {
+        const checkpoint = this.checkpoints.find((candidate) => candidate.id === args.checkpointId)!;
+        if (!checkpoint || checkpoint.status !== "approved" || !checkpoint.approved) {
+          throw failure("INVALID_STATE", "Only an approved capsule can be exported.");
+        }
+        return {
+          path: `/exports/${this.thread.id}/capsule-${checkpoint.id}.md`,
+          format: "markdown",
+          bytes: 512,
+        };
+      }
+      case "threads_archive":
+        this.setState("ARCHIVED");
+        return this.thread;
+      case "threads_delete": {
+        const threadId = args.threadId;
+        this.deletedThreads.push(threadId);
+        const eventsDeleted = this.events.length;
+        const checkpointsDeleted = this.checkpoints.length;
+        this.events = [];
+        this.checkpoints = [];
+        this.corrections.clear();
+        this.setState("DELETED");
+        return {
+          threadId,
+          eventsDeleted,
+          checkpointsDeleted,
+          correctionsDeleted: 0,
+          artifactsDeleted: 0,
+          exportsDeleted: 0,
+          deletedAt: new Date().toISOString(),
+        };
+      }
+      case "threads_list":
+        return this.thread.state === "DELETED" ? [] : [this.thread];
+      case "threads_pause_all":
+        if (this.recording) {
+          this.add({ type: "thread_paused", payload: { reason: "user" } });
+          this.setState("PAUSED");
+          return [this.thread];
+        }
+        return [];
+      case "projects_list":
+        return this.projectsList;
+      case "projects_default_exclusions":
+        return [".env", ".env.*", "*.pem", "*.key", ".git/**", "node_modules/**", "target/**"];
+      case "projects_get_policy":
+        return { ...this.policy };
+      case "projects_update_policy": {
+        const next = args.policy;
+        if (next.retentionDays < 1 || next.retentionDays > 365) {
+          throw failure("INVALID_INPUT", "Retention must be between 1 and 365 days.", "retentionDays");
+        }
+        this.policy = { ...next };
+        return { ...this.policy };
+      }
+      case "privacy_test_redaction": {
+        const input = args.input;
+        let text = String(input.text ?? "");
+        const findings: { label: string; description: string; count: number; isSecret: boolean }[] = [];
+        if (/Bearer\s+\S+/i.test(text)) {
+          text = text.replace(/(Bearer\s+)\S+/gi, "$1[REDACTED:bearer-token]");
+          findings.push({ label: "bearer-token", description: "a bearer token", count: 1, isSecret: true });
+        }
+        if (/nbf_demo_[A-Za-z0-9_]+/.test(text)) {
+          text = text.replace(/nbf_demo_[A-Za-z0-9_]+/g, "[REDACTED:api-token]");
+          findings.push({ label: "api-token", description: "an API token", count: 1, isSecret: true });
+        }
+        for (const pat of input.customPatterns ?? []) {
+          if (pat && new RegExp(pat).test(text)) {
+            text = text.replace(new RegExp(pat, "g"), "[REDACTED:custom]");
+            findings.push({ label: "custom", description: "text matching one of your custom patterns", count: 1, isSecret: true });
+          }
+        }
+        const secretCount = findings.filter((f) => f.isSecret).reduce((sum, f) => sum + f.count, 0);
+        return {
+          redactedText: text,
+          findings,
+          secretCount,
+          hasSecret: secretCount > 0,
+        };
+      }
+      case "privacy_expire_events":
+        return { rawEventsExpired: 0 };
       default:
         throw new Error(`Unexpected command ${command}`);
     }

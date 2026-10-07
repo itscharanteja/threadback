@@ -1,3 +1,4 @@
+mod resume;
 mod select;
 
 use chrono::{DateTime, Utc};
@@ -14,6 +15,10 @@ use crate::{
     },
 };
 
+pub use resume::{
+    DriftKind, DriftSignal, OpenedArtifact, RepositoryDrift, ResumeViewModel, build_resume_view,
+    compare_snapshots, open_checkpoint_artifact,
+};
 pub use select::{SelectionLimits, build_payload};
 
 /// A checkpoint that exists only locally and has not been sent to a model.
@@ -249,6 +254,18 @@ impl<'a> CheckpointService<'a> {
         self.database
             .find_checkpoint(id)?
             .ok_or_else(|| DomainError::not_found("That checkpoint no longer exists."))
+    }
+
+    pub fn get_resume(&self, id: &CheckpointId) -> Result<ResumeViewModel, DomainError> {
+        build_resume_view(self.database, id)
+    }
+
+    pub fn open_artifact(
+        &self,
+        id: &CheckpointId,
+        relative_path: &str,
+    ) -> Result<OpenedArtifact, DomainError> {
+        open_checkpoint_artifact(self.database, id, relative_path)
     }
 
     /// Newest first.

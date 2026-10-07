@@ -391,8 +391,14 @@ fn recording_target(database: &Database, cwd: &Path) -> Result<RecordingTarget, 
         .find_project(&thread.project_id)
         .map_err(|error| error.message)?
         .ok_or("the thread's project is no longer approved.")?;
-    let boundary =
-        ProjectBoundary::new(&project.canonical_root, &[]).map_err(|error| error.message)?;
+    let policy = database
+        .find_project_policy(&project.id)
+        .unwrap_or_else(|_| crate::ProjectPolicy::default_for(project.id.clone()));
+    if !policy.capture_commands {
+        return Err("command capture is turned off for this project in Privacy settings.".into());
+    }
+    let boundary = ProjectBoundary::new(&project.canonical_root, &policy.exclusions)
+        .map_err(|error| error.message)?;
     let resolved = boundary.resolve(cwd).map_err(|error| {
         format!(
             "this folder is not inside the recording thread's project ({}).",

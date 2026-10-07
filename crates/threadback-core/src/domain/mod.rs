@@ -94,7 +94,10 @@ impl CreateProjectInput {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub const DEFAULT_RETENTION_DAYS: u32 = 14;
+pub const MAX_RETENTION_DAYS: u32 = 365;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectPolicy {
     pub project_id: ProjectId,
@@ -104,6 +107,76 @@ pub struct ProjectPolicy {
     pub capture_commands: bool,
     pub capture_file_metadata: bool,
     pub redaction_patterns: Vec<String>,
+}
+
+impl ProjectPolicy {
+    pub fn default_for(project_id: ProjectId) -> Self {
+        Self {
+            project_id,
+            exclusions: Vec::new(),
+            retention_days: DEFAULT_RETENTION_DAYS,
+            capture_git: true,
+            capture_commands: true,
+            capture_file_metadata: true,
+            redaction_patterns: Vec::new(),
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), crate::DomainError> {
+        if !(1..=MAX_RETENTION_DAYS).contains(&self.retention_days) {
+            return Err(crate::DomainError::invalid_input(
+                format!("Retention must be between 1 and {MAX_RETENTION_DAYS} days."),
+                "retentionDays",
+            ));
+        }
+        // Validate any custom redaction patterns by compiling a Redactor.
+        crate::privacy::Redactor::new(&self.redaction_patterns)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletionReceipt {
+    pub thread_id: ThreadId,
+    pub events_deleted: u32,
+    pub checkpoints_deleted: u32,
+    pub corrections_deleted: u32,
+    pub artifacts_deleted: u32,
+    pub exports_deleted: u32,
+    pub deleted_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RetentionReport {
+    pub raw_events_expired: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RedactionTestInput {
+    pub project_id: Option<ProjectId>,
+    pub custom_patterns: Vec<String>,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RedactionTestFinding {
+    pub label: String,
+    pub description: String,
+    pub count: u32,
+    pub is_secret: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RedactionTestResult {
+    pub redacted_text: String,
+    pub findings: Vec<RedactionTestFinding>,
+    pub secret_count: u32,
+    pub has_secret: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

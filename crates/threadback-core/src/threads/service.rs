@@ -55,8 +55,16 @@ impl<'a> ThreadService<'a> {
             .database
             .find_project(&input.project_id)?
             .ok_or_else(|| DomainError::not_found("The selected project is not approved."))?;
-        let payload = snapshot_payload(&project.canonical_root)?;
-        self.start_with(input, Some(payload))
+        let policy = self
+            .database
+            .find_project_policy(&project.id)
+            .unwrap_or_else(|_| crate::ProjectPolicy::default_for(project.id.clone()));
+        let payload = if policy.capture_git {
+            Some(snapshot_payload(&project.canonical_root, &policy.exclusions)?)
+        } else {
+            None
+        };
+        self.start_with(input, payload)
     }
 
     fn start_with(
@@ -147,6 +155,21 @@ impl<'a> ThreadService<'a> {
         self.transition(id, LifecycleAction::Archive, |_| Ok(None))
     }
 
+    /// Transactionally deletes a thread and all related rows and exports.
+    pub fn delete(&self, id: &ThreadId) -> Result<crate::DeletionReceipt, DomainError> {
+        self.database.delete_thread(id)
+    }
+
+    /// Pauses every active or resumed thread immediately.
+    pub fn pause_all(&self) -> Result<Vec<WorkThread>, DomainError> {
+        let live = self.database.list_live_threads()?;
+        let mut paused = Vec::with_capacity(live.len());
+        for thread in live {
+            paused.push(self.pause(&thread.id, PauseReason::User)?);
+        }
+        Ok(paused)
+    }
+
     /// Appends an event to a recording thread. The event is committed before
     /// this returns, so a returned event is an acknowledged one.
     pub fn record(
@@ -173,7 +196,16 @@ impl<'a> ThreadService<'a> {
             .database
             .find_project(&thread.project_id)?
             .ok_or_else(|| DomainError::not_found("The thread's project is no longer approved."))?;
-        let payload = snapshot_payload(&project.canonical_root)?;
+        let policy = self
+            .database
+            .find_project_policy(&project.id)
+            .unwrap_or_else(|_| crate::ProjectPolicy::default_for(project.id.clone()));
+        if !policy.capture_git {
+            return Err(DomainError::invalid_state(
+                "Git snapshot capture is turned off for this project in Privacy settings.",
+            ));
+        }
+        let payload = snapshot_payload(&project.canonical_root, &policy.exclusions)?;
         self.record(id, EventPayload::GitSnapshot(payload), Sensitivity::Normal)
     }
 
@@ -261,8 +293,11 @@ pub(crate) fn apply_transition(
     Ok(thread)
 }
 
-fn snapshot_payload(canonical_root: &str) -> Result<serde_json::Value, DomainError> {
-    let boundary = ProjectBoundary::new(canonical_root, &[])?;
+fn snapshot_payload(
+    canonical_root: &str,
+    exclusions: &[String],
+) -> Result<serde_json::Value, DomainError> {
+    let boundary = ProjectBoundary::new(canonical_root, exclusions)?;
     let snapshot = capture_snapshot(&boundary)?;
     serde_json::to_value(&snapshot)
         .map_err(|error| DomainError::internal(format!("Snapshot serialization failed: {error}")))

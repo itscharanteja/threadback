@@ -4,6 +4,7 @@ pub mod collectors;
 pub mod config;
 pub mod domain;
 pub mod error;
+pub mod export;
 pub mod inference;
 pub mod outbound;
 pub mod paths;
@@ -15,8 +16,9 @@ pub mod threads;
 pub use approval::{ApprovalResult, ApprovalService, FieldChange, diff_capsules};
 pub use checkpoints::{
     CheckpointEntry, CheckpointPayload, CheckpointRequestedPayload, CheckpointService,
-    CheckpointTrigger, Omissions, STATUS_APPROVED, STATUS_DISCARDED, STATUS_DRAFT,
-    STATUS_GENERATED, SnapshotStatus,
+    CheckpointTrigger, DriftKind, DriftSignal, Omissions, OpenedArtifact, RepositoryDrift,
+    ResumeViewModel, STATUS_APPROVED, STATUS_DISCARDED, STATUS_DRAFT, STATUS_GENERATED,
+    SnapshotStatus, build_resume_view, compare_snapshots, open_checkpoint_artifact,
 };
 pub use collectors::{
     CaptureLimits, ChangedPath, CommandFinishedPayload, CommandRequest, CommandStartedPayload,
@@ -30,6 +32,7 @@ pub use config::{
 };
 pub use domain::*;
 pub use error::{DomainError, ErrorCode};
+pub use export::{ExportService, FileResult, render_markdown};
 #[cfg(feature = "model-client")]
 pub use inference::{CancelToken, TokenFactoryClient};
 pub use inference::{
@@ -45,7 +48,7 @@ pub use outbound::{
     PayloadPreview, PayloadPreviewEntry, PreviewCounts, PreviewFinding,
 };
 pub use paths::database_path;
-pub use privacy::{Finding, FindingKind, Redaction, Redactor, StreamRedactor};
+pub use privacy::{Finding, FindingKind, Redaction, Redactor, StreamRedactor, test_redaction};
 pub use projects::approve_project;
 pub use storage::{Database, LatencySummary};
 pub use threads::{

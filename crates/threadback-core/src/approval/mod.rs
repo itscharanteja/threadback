@@ -162,7 +162,11 @@ impl<'a> ApprovalService<'a> {
             .database
             .find_project(&thread.project_id)?
             .ok_or_else(|| DomainError::not_found("The thread's project is no longer approved."))?;
-        let boundary = ProjectBoundary::new(&project.canonical_root, &[])?;
+        let policy = self
+            .database
+            .find_project_policy(&project.id)
+            .unwrap_or_else(|_| crate::ProjectPolicy::default_for(project.id.clone()));
+        let boundary = ProjectBoundary::new(&project.canonical_root, &policy.exclusions)?;
         let entries = payload.entries.iter().map(|entry| {
             ShownEntry::from_content(entry.event_id.clone(), &entry.kind, &entry.content)
         });

@@ -1,17 +1,29 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AddNoteInput,
+  ApprovalResult,
   Checkpoint,
   ConfigurationStatus,
   ConnectionTestResult,
+  Correction,
+  DeletionReceipt,
+  FileResult,
   ModelConfigInput,
   CheckpointId,
   CreateProjectInput,
   EventId,
   EventPage,
+  OpenedArtifact,
   PayloadPreview,
   Project,
+  ProjectId,
+  ProjectPolicy,
   RecoveryReport,
+  RedactionTestInput,
+  RedactionTestResult,
+  ResumeCapsule,
+  ResumeViewModel,
+  RetentionReport,
   StartThreadInput,
   ThreadEvent,
   ThreadId,
@@ -30,6 +42,14 @@ export const projects = {
   /** Exclusions applied to every project. */
   defaultExclusions(): Promise<string[]> {
     return invoke<string[]>("projects_default_exclusions");
+  },
+
+  getPolicy(projectId: ProjectId): Promise<ProjectPolicy> {
+    return invoke<ProjectPolicy>("projects_get_policy", { projectId });
+  },
+
+  updatePolicy(policy: ProjectPolicy): Promise<ProjectPolicy> {
+    return invoke<ProjectPolicy>("projects_update_policy", { policy });
   },
 };
 
@@ -54,6 +74,10 @@ export const threads = {
     return invoke<WorkThread>("threads_pause", { threadId });
   },
 
+  pauseAll(): Promise<WorkThread[]> {
+    return invoke<WorkThread[]>("threads_pause_all");
+  },
+
   resume(threadId: ThreadId): Promise<WorkThread> {
     return invoke<WorkThread>("threads_resume", { threadId });
   },
@@ -65,6 +89,10 @@ export const threads = {
 
   archive(threadId: ThreadId): Promise<WorkThread> {
     return invoke<WorkThread>("threads_archive", { threadId });
+  },
+
+  delete(threadId: ThreadId): Promise<DeletionReceipt> {
+    return invoke<DeletionReceipt>("threads_delete", { threadId });
   },
 };
 
@@ -98,6 +126,16 @@ export const checkpoints = {
     return invoke<Checkpoint>("checkpoints_get", { checkpointId });
   },
 
+  /** Return view model with live repository drift comparison. */
+  getResume(checkpointId: CheckpointId): Promise<ResumeViewModel> {
+    return invoke<ResumeViewModel>("checkpoints_get_resume", { checkpointId });
+  },
+
+  /** Explicitly opens a project-relative artifact after a user click. */
+  openArtifact(checkpointId: CheckpointId, relativePath: string): Promise<OpenedArtifact> {
+    return invoke<OpenedArtifact>("checkpoints_open_artifact", { checkpointId, relativePath });
+  },
+
   /**
    * Asks the model for a capsule from the reviewed payload and resolves to the
    * checkpoint with its draft. Refused if the payload is blocked or has changed.
@@ -119,6 +157,39 @@ export const checkpoints = {
   /** What would be sent, with the excluded entries left out. Sends nothing. */
   preview(checkpointId: CheckpointId, excludedEventIds: EventId[] = []): Promise<PayloadPreview> {
     return invoke<PayloadPreview>("checkpoints_preview", { checkpointId, excludedEventIds });
+  },
+
+  /**
+   * Approves the user's final capsule (the draft with their edits). The server
+   * re-checks it and derives the corrections itself; the draft is never changed.
+   */
+  approve(checkpointId: CheckpointId, capsule: ResumeCapsule): Promise<ApprovalResult> {
+    return invoke<ApprovalResult>("checkpoints_approve", { checkpointId, capsule });
+  },
+
+  /** The changes made when the checkpoint was approved, oldest first. */
+  corrections(checkpointId: CheckpointId): Promise<Correction[]> {
+    return invoke<Correction[]>("checkpoints_corrections", { checkpointId });
+  },
+};
+
+export const exports = {
+  json(checkpointId: CheckpointId): Promise<FileResult> {
+    return invoke<FileResult>("exports_json", { checkpointId });
+  },
+
+  markdown(checkpointId: CheckpointId): Promise<FileResult> {
+    return invoke<FileResult>("exports_markdown", { checkpointId });
+  },
+};
+
+export const privacy = {
+  testRedaction(input: RedactionTestInput): Promise<RedactionTestResult> {
+    return invoke<RedactionTestResult>("privacy_test_redaction", { input });
+  },
+
+  expireEvents(): Promise<RetentionReport> {
+    return invoke<RetentionReport>("privacy_expire_events");
   },
 };
 

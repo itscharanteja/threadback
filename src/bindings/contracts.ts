@@ -26,6 +26,28 @@ export type CreateProjectInput = { displayName: string, rootPath: string, };
 
 export type ProjectPolicy = { projectId: ProjectId, exclusions: Array<string>, retentionDays: number, captureGit: boolean, captureCommands: boolean, captureFileMetadata: boolean, redactionPatterns: Array<string>, };
 
+export type DeletionReceipt = { threadId: ThreadId, eventsDeleted: number, checkpointsDeleted: number, correctionsDeleted: number, artifactsDeleted: number, exportsDeleted: number, deletedAt: string, };
+
+export type RetentionReport = { rawEventsExpired: number, };
+
+export type RedactionTestInput = { projectId: ProjectId | null, customPatterns: Array<string>, text: string, };
+
+export type RedactionTestFinding = { label: string, description: string, count: number, isSecret: boolean, };
+
+export type RedactionTestResult = { redactedText: string, findings: Array<RedactionTestFinding>, secretCount: number, hasSecret: boolean, };
+
+export type FileResult = { path: string, format: string, bytes: bigint, };
+
+export type DriftKind = "branch_changed" | "head_changed" | "working_tree_changed" | "repository_unavailable";
+
+export type DriftSignal = { kind: DriftKind, label: string, before: string | null, after: string | null, };
+
+export type RepositoryDrift = { checked: boolean, hasDrift: boolean, summary: string, signals: Array<DriftSignal>, checkpointSnapshot: GitSnapshot | null, currentSnapshot: GitSnapshot | null, };
+
+export type ResumeViewModel = { thread: WorkThread, checkpoint: Checkpoint, corrections: Array<Correction>, drift: RepositoryDrift, };
+
+export type OpenedArtifact = { relativePath: string, resolvedPath: string, exists: boolean, contentPreview: string | null, truncated: boolean, };
+
 export type StartThreadInput = { projectId: ProjectId, title: string, goal: string, hypothesis: string | null, };
 
 export type AddNoteInput = { text: string, label: NoteLabel, };

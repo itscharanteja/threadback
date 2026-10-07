@@ -51,7 +51,10 @@ pub fn plan_generation(
     let project = database
         .find_project(&thread.project_id)?
         .ok_or_else(|| DomainError::not_found("The thread's project is no longer approved."))?;
-    let boundary = ProjectBoundary::new(&project.canonical_root, &[])?;
+    let policy = database
+        .find_project_policy(&project.id)
+        .unwrap_or_else(|_| crate::ProjectPolicy::default_for(project.id.clone()));
+    let boundary = ProjectBoundary::new(&project.canonical_root, &policy.exclusions)?;
     let context = outbound.validation_context(&approved, boundary)?;
 
     Ok(GenerationPlan {

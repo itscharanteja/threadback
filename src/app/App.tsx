@@ -134,13 +134,21 @@ export function App() {
               project={data.projects.find((project) => project.id === shownThread.projectId)}
               onChanged={data.refresh}
               onOpenSettings={() => setView({ name: "settings" })}
+              onDeleted={() => setView({ name: "home" })}
             />
           ) : (
             <p className="empty" role="status">
               {data.loaded ? "That thread no longer exists." : "Loading…"}
             </p>
           ))}
-        {view.name === "privacy" && <PrivacyScreen projects={data.projects} />}
+        {view.name === "privacy" && (
+          <PrivacyScreen
+            projects={data.projects}
+            threads={data.threads}
+            recordingThread={data.recordingThread}
+            onChanged={data.refresh}
+          />
+        )}
         {view.name === "settings" && <ModelSettingsScreen />}
       </main>
     </>

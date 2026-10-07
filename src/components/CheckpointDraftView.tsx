@@ -8,6 +8,8 @@ interface CheckpointDraftViewProps {
   checkpoint: Checkpoint;
   /** A capsule has been generated, so the evidence can no longer be re-sent. */
   generated?: boolean;
+  /** An approved capsule can no longer be discarded. */
+  canDiscard?: boolean;
   onReview: () => void;
   onDiscard: () => Promise<void>;
   busy: boolean;
@@ -15,7 +17,7 @@ interface CheckpointDraftViewProps {
 
 /** A saved checkpoint, readable with no model or network. */
 export const CheckpointDraftView = forwardRef<HTMLHeadingElement, CheckpointDraftViewProps>(
-  function CheckpointDraftView({ checkpoint, generated = false, onReview, onDiscard, busy }, headingRef) {
+  function CheckpointDraftView({ checkpoint, generated = false, canDiscard = true, onReview, onDiscard, busy }, headingRef) {
     const payload = checkpoint.payload as unknown as CheckpointPayload;
     const { omissions, finalSnapshot } = payload;
     const leftOut: string[] = [];
@@ -74,7 +76,7 @@ export const CheckpointDraftView = forwardRef<HTMLHeadingElement, CheckpointDraf
               Review what will be sent…
             </button>
           )}
-          <DiscardDraftControl onConfirm={onDiscard} busy={busy} />
+          {canDiscard ? <DiscardDraftControl onConfirm={onDiscard} busy={busy} /> : null}
         </div>
       </section>
     );

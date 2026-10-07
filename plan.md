@@ -117,49 +117,49 @@ Every command returns either its declared result or a serializable domain error 
 
 ### 4.0 Foundation
 
-- [ ] **F-01 — Scaffold Tauri 2, React, and TypeScript**
+- [x] **F-01 — Scaffold Tauri 2, React, and TypeScript**
   - Dependencies: None.
   - Deliverable: Launchable macOS development application using Vite, npm, and Cargo scripts.
   - Accept when: `npm run tauri dev`, frontend type-checking, and Rust checking succeed.
 
-- [ ] **F-02 — Establish Rust workspace and module boundaries**
+- [x] **F-02 — Establish Rust workspace and module boundaries**
   - Dependencies: F-01.
   - Deliverable: Tauri application, reusable `threadback-core` crate, and `tb` CLI crate.
   - Accept when: Both binaries compile and depend on the same domain and storage library.
 
-- [ ] **F-03 — Define domain contracts**
+- [x] **F-03 — Define domain contracts**
   - Dependencies: F-02.
   - Deliverable: Rust types for projects, policies, threads, states, events, artifacts, checkpoints, corrections, payload previews, resume capsules, and receipts.
   - Accept when: TypeScript bindings are generated from Rust and contain no database- or UI-specific fields.
 
-- [ ] **F-04 — Define the Tauri command API and error envelope**
+- [x] **F-04 — Define the Tauri command API and error envelope**
   - Dependencies: F-03.
   - Deliverable: Typed command declarations, generated frontend bindings, stable error codes, and user-safe messages.
   - Accept when: Invalid command input is rejected before service execution and the API key cannot be read back.
 
-- [ ] **F-05 — Add repository essentials**
+- [x] **F-05 — Add repository essentials**
   - Dependencies: F-01.
   - Deliverable: README skeleton, `.env.example` containing names only, license, ignore rules, and format, check, test, build, and demo-reset commands.
   - Accept when: A clean checkout can run all local validation commands documented by the repository.
 
 ### 4.1 Persistence and thread lifecycle
 
-- [ ] **P-01 — Create SQLite migrations**
+- [x] **P-01 — Create SQLite migrations**
   - Dependencies: F-02, F-03.
   - Deliverable: Versioned migrations and indexes for projects, policies, threads, events, artifacts, checkpoints, corrections, and metadata.
   - Accept when: A new database migrates successfully and repeated startup is idempotent.
 
-- [ ] **P-02 — Implement repositories**
+- [x] **P-02 — Implement repositories**
   - Dependencies: P-01.
   - Deliverable: Transactional Rust repositories with append-only event insertion and cursor-based timeline reads.
   - Accept when: Project, thread, event, and checkpoint records survive application restart.
 
-- [ ] **P-03 — Implement lifecycle rules**
+- [x] **P-03 — Implement lifecycle rules**
   - Dependencies: P-02.
   - Deliverable: Start, pause, resume, end, archive, and delete services enforcing the specification's state model.
   - Accept when: Table-driven tests cover every allowed and rejected transition.
 
-- [ ] **P-04 — Implement durable acknowledgement and recovery**
+- [x] **P-04 — Implement durable acknowledgement and recovery**
   - Dependencies: P-03.
   - Deliverable: Commit-before-success event handling and startup recovery for an interrupted active thread.
   - Accept when: A forced restart retains every acknowledged event and surfaces any unrecorded interval.
@@ -171,93 +171,93 @@ Every command returns either its declared result or a serializable domain error 
 
 ### 4.2 Project boundary and evidence collection
 
-- [ ] **E-01 — Implement project allowlisting**
+- [x] **E-01 — Implement project allowlisting**
   - Dependencies: F-03, P-02.
   - Deliverable: Canonical-root resolution, default exclusions, relative-path normalization, symlink enforcement, and readable rejection errors.
   - Accept when: Traversal, direct outside-root paths, and outside-root symlinks cannot create events.
 
-- [ ] **E-02 — Implement read-only Git snapshots**
+- [x] **E-02 — Implement read-only Git snapshots**
   - Dependencies: E-01.
   - Deliverable: Branch, HEAD, porcelain status, changed paths, and staged and unstaged diff statistics collected with fixed `std::process::Command` arguments.
   - Accept when: Tests prove that no shell interpolation or mutating Git command is reachable.
 
-- [ ] **E-03 — Implement `tb run -- <command> [args...]`**
+- [x] **E-03 — Implement `tb run -- <command> [args...]`**
   - Dependencies: E-01, P-03.
   - Deliverable: Rust CLI that records start and finish times, canonical working directory, exit code, bounded stdout and stderr, and truncation details while forwarding the child exit code.
   - Accept when: It records only during an active thread, rejects invalid working directories, and never reads global shell history.
 
-- [ ] **E-04 — Implement output bounding**
+- [x] **E-04 — Implement output bounding**
   - Dependencies: E-03.
   - Deliverable: Configurable byte limits retaining head and tail excerpts with explicit original-size and truncation metadata.
   - Accept when: Large-output tests keep storage bounded without losing exit status or truncation visibility.
 
-- [ ] **E-05 — Implement notes and the evidence timeline**
+- [x] **E-05 — Implement notes and the evidence timeline**
   - Dependencies: F-04, P-03, E-02.
   - Deliverable: Fact, hypothesis, question, and next-step notes plus a chronological, paginated event timeline.
   - Accept when: User labels are preserved exactly and evidence survives restart.
 
 ### 4.3 Privacy and offline checkpoints
 
-- [ ] **C-01 — Implement deterministic redaction**
+- [x] **C-01 — Implement deterministic redaction**
   - Dependencies: F-03.
   - Deliverable: Redaction for common tokens, private keys, credential URLs, absolute home paths, and configured patterns.
   - Accept when: Seeded secrets expose zero original secret characters in persisted or outbound content.
 
-- [ ] **C-02 — Implement outbound policy filtering**
+- [x] **C-02 — Implement outbound policy filtering**
   - Dependencies: C-01, E-01.
   - Deliverable: Included, excluded, blocked, and local-only classifications with per-entry and total sizes.
   - Accept when: A blocking match prevents transmission until the entry is removed or excluded.
 
-- [ ] **C-03 — Implement checkpoint preparation**
+- [x] **C-03 — Implement checkpoint preparation**
   - Dependencies: E-02, E-05, C-02, P-02.
   - Deliverable: Final Git snapshot, active evidence-range selection, deduplication, event and character budgets, and a durable local draft.
   - Accept when: **Save My Place** completes offline in under two seconds on the demo dataset and survives restart.
 
-- [ ] **C-04 — Build the payload-preview UI**
+- [x] **C-04 — Build the payload-preview UI**
   - Dependencies: F-04, C-03.
   - Deliverable: Exact outbound-payload display, per-entry exclusion, redaction state, total size, cancel, and confirm controls.
   - Accept when: No network request can occur before explicit confirmation and blocking warnings disable generation.
 
 ### 4.4 Model integration and validation
 
-- [ ] **M-01 — Implement secure configuration**
+- [x] **M-01 — Implement secure configuration**
   - Dependencies: F-04.
   - Deliverable: Endpoint and model configuration plus write-only API-key storage through macOS Keychain.
   - Accept when: The key is never rendered, stored in SQLite, included in exports, or written to diagnostics.
 
-- [ ] **M-02 — Implement the Token Factory client**
+- [x] **M-02 — Implement the Token Factory client**
   - Dependencies: M-01, C-04.
   - Deliverable: OpenAI-compatible Nemotron client with cancellation, timeouts, and typed authentication, rate-limit, network, timeout, and server errors.
   - Accept when: Diagnostics contain model ID, latency, and token usage but no payload or authorization data.
 
-- [ ] **M-03 — Create the versioned prompt and capsule schema**
+- [x] **M-03 — Create the versioned prompt and capsule schema**
   - Dependencies: F-03, C-03.
   - Deliverable: Versioned prompt treating repository content as untrusted evidence and requiring every capsule section and required source ID.
   - Accept when: Valid fixture responses deserialize into the `ResumeCapsule` contract and prompt-injection fixtures do not alter the output contract.
 
-- [ ] **M-04 — Implement validation and repair**
+- [x] **M-04 — Implement validation and repair**
   - Dependencies: M-03.
   - Deliverable: JSON-shape, provenance ownership, checkpoint-range, confidence, and artifact-path validation followed by one deterministic repair attempt.
   - Accept when: A second failure becomes a visible error and no unsupported verified fact can be approved.
 
-- [ ] **M-05 — Preserve draft and approved versions**
+- [x] **M-05 — Preserve draft and approved versions**
   - Dependencies: P-02, M-04.
   - Deliverable: Separate immutable model draft and user-approved capsule with corrections recorded by field path.
   - Accept when: Approval never overwrites the original model result and every correction remains inspectable.
 
 ### 4.5 Desktop workflow
 
-- [ ] **U-01 — Build the application shell and onboarding**
+- [x] **U-01 — Build the application shell and onboarding**
   - Dependencies: F-04, P-03, E-01, M-01.
   - Deliverable: Home, project onboarding, active-thread and privacy navigation, native folder selection, and connectivity and capture indicators.
   - Accept when: A project can be approved and a required-goal thread started using keyboard navigation.
 
-- [ ] **U-02 — Build the active-thread workflow**
+- [x] **U-02 — Build the active-thread workflow**
   - Dependencies: E-05, C-03, U-01.
   - Deliverable: Goal, status, evidence timeline, labelled notes, pause, end, and **Save My Place**.
   - Accept when: Only `ACTIVE` threads record evidence and all acknowledged actions remain after restart.
 
-- [ ] **U-03 — Build capsule review**
+- [x] **U-03 — Build capsule review**
   - Dependencies: M-04, M-05, C-04.
   - Deliverable: Next action first, source-linked facts, hypotheses, failed attempts, questions, artifacts, editing, relabelling, regeneration, approval, and original-draft inspection.
   - Accept when: Every verified fact opens valid local evidence and user corrections are authoritative.
@@ -675,22 +675,41 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - Startup recovery (P-04) pauses any thread still `ACTIVE` or `RESUMED` with the system reason `interrupted` and reports the gap from its last acknowledged event. Capture never resumes silently after a restart.
 - Open question: there is no way to abandon a `CHECKPOINT_DRAFT` and return to work.
 
+### Capsule review, editing, and approval (U-03)
+
+- `CapsuleReview` holds a deep copy of `checkpoint.draft` as the user's working copy, so editing never mutates the model's draft.
+- Every cited event ID renders as a `SourceList` button that expands the corresponding checkpoint entry inline (`entryItems`/`Timeline`), or warns if the ID is not in the checkpoint.
+- Verified facts with no resolvable source or resting only on `hypothesis`/`question`/`next_step` notes are flagged `Needs review` (in words and a glyph), and **Approve capsule** stays focusable with `aria-disabled="true"` and an explanation until fixed.
+- Facts can be relabelled as hypotheses (`low` confidence by default, editable via select), and hypotheses can be promoted to verified facts once they cite supporting evidence. Claims, summaries, goals, attempts, questions, artifact reasons, and next-action fields can be edited or removed; open questions and limitations can be added.
+- **Show the original model draft** discloses the read-only `CapsuleView` of `checkpoint.draft` alongside the working copy, and **Discard my edits** resets the working copy.
+- **Approve capsule** sends the whole working copy to `checkpoints.approve(checkpointId, capsule)`. On `INVALID_CAPSULE`, focus moves to the field identified by the error's JSON Pointer. On success, `ApprovedCapsule` renders the approved version read-only, lists the recorded corrections (`before` and `after` by field path), and keeps the original model draft inspectable.
+- **Regenerate…** confirms, discards the unapproved draft (`checkpoints.discard`), saves the place again (`checkpoints.savePlace`), and opens the payload preview.
+
+### Retention, complete deletion, exports, drift return, and privacy controls (P-05, R-01, U-04, U-05)
+
+- `Database::delete_thread` transactionally removes `corrections`, `model_calls`, `checkpoints`, `artifact_refs`, `events`, and `work_threads` in FK-safe order, deletes any files in `thread_exports_directory(thread_id)`, and runs `PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);` so deleted bytes leave the database file.
+- `Database::expire_raw_events` deletes raw `events` older than each project's `retention_days` (default 14) while protecting any event referenced by a checkpoint (`start_event_id`, `end_event_id`, or cited inside `draft_json` / `approved_json`). It runs on app initialization, when saving a project policy, and via `privacy.expireEvents`.
+- `ExportService::export_json` and `ExportService::export_markdown` write only `checkpoint.approved` (refusing unapproved checkpoints) into `<data-dir>/exports/<thread_id>/<checkpoint_id>.json` and `.md` alongside a SHA-256 fingerprint.
+- `CheckpointService::get_resume` compares the checkpoint's final Git snapshot against a fresh read-only Git snapshot of the project root, reporting `branch_changed`, `head_changed`, `working_tree_changed`, or `unavailable` drift signals in `ApprovedCapsule` before resume actions.
+- `CheckpointService::open_artifact` validates that the path belongs to the approved capsule's `artifacts_to_reopen` and resolves inside the project boundary, returning a bounded 32 KiB text preview on explicit click. Next-action instructions are copied only on explicit click (`Copy next action`), and no capsule action ever executes a command.
+- `PrivacyScreen` exposes per-project retention days, collector toggles (`capture_git`, `capture_commands`, `capture_file_events`), custom excluded globs, custom redaction regexes, a live non-persisting redaction tester (`privacy.testRedaction`), a single-click **Pause all active capture** action (`threads.pauseAll`), and destructive thread deletion with confirmation.
+
 ## 10. Final acceptance checklist
 
-- [ ] An approved project cannot escape its canonical boundary.
-- [ ] Thread lifecycle and acknowledged events persist across restart.
-- [ ] Git and explicitly wrapped-command events are durable.
-- [ ] User-authored note labels remain authoritative.
-- [ ] **Save My Place** works offline.
+- [x] An approved project cannot escape its canonical boundary.
+- [x] Thread lifecycle and acknowledged events persist across restart.
+- [x] Git and explicitly wrapped-command events are durable.
+- [x] User-authored note labels remain authoritative.
+- [x] **Save My Place** works offline.
 - [ ] The outbound payload is fully visible and editable before transmission.
-- [ ] The seeded fake secret never reaches the model payload.
-- [ ] A real Nemotron call produces the capsule draft.
-- [ ] Unsupported facts cannot be approved silently.
-- [ ] The user can correct and approve the capsule without overwriting the model draft.
-- [ ] Repository drift appears before resume actions.
-- [ ] No command executes automatically from a capsule.
-- [ ] Approved JSON and Markdown exports work.
-- [ ] Retention and complete deletion work.
+- [x] The seeded fake secret never reaches the model payload.
+- [x] A real Nemotron call produces the capsule draft.
+- [x] Unsupported facts cannot be approved silently.
+- [x] The user can correct and approve the capsule without overwriting the model draft.
+- [x] Repository drift appears before resume actions.
+- [x] No command executes automatically from a capsule.
+- [x] Approved JSON and Markdown exports work.
+- [x] Retention and complete deletion work.
 - [ ] The ten-scenario evaluation report exists.
 - [ ] The demo resets in one command.
 - [ ] README, license, setup, tests, privacy notes, and limitations are complete.

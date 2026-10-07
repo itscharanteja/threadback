@@ -98,25 +98,25 @@
 **Deliverable:** The user can inspect sources, correct and approve a capsule, see repository drift, resume safely, export the result, or completely delete the thread.
 
 - [x] M-05 Preserve the immutable model draft, approved version, and correction history.
-- [ ] U-03 Build source-linked review, editing, relabelling, regeneration, and approval.
-- [ ] U-04 Build drift comparison, resume, archive, explicit open/copy, export, and delete actions.
-- [ ] U-05 Build privacy, retention, redaction-test, pause-all, and destructive-confirmation controls.
-- [ ] P-05 Implement raw-event retention and transactional complete deletion.
-- [ ] R-01 Implement approved JSON and Markdown exports.
+- [x] U-03 Build source-linked review, editing, relabelling, regeneration, and approval.
+- [x] U-04 Build drift comparison, resume, archive, explicit open/copy, export, and delete actions.
+- [x] U-05 Build privacy, retention, redaction-test, pause-all, and destructive-confirmation controls.
+- [x] P-05 Implement raw-event retention and transactional complete deletion.
+- [x] R-01 Implement approved JSON and Markdown exports.
 
 ### Gate G4 — Human review
 
-- [ ] Every verified fact resolves to valid evidence in the checkpoint interval.
-- [ ] Relabelling and edits are authoritative and recorded as corrections.
-- [ ] Approval does not overwrite the original model draft.
+- [x] Every verified fact resolves to valid evidence in the checkpoint interval.
+- [x] Relabelling and edits are authoritative and recorded as corrections.
+- [x] Approval does not overwrite the original model draft.
 
 ### Gate G5 — Return
 
-- [ ] Branch, HEAD, and status drift appear before resume actions.
-- [ ] Artifact opening and command copying require explicit clicks.
-- [ ] No capsule action executes a command automatically.
-- [ ] JSON and Markdown exports contain only the approved result.
-- [ ] Complete deletion leaves no related rows, caches, indexes, or exports.
+- [x] Branch, HEAD, and status drift appear before resume actions.
+- [x] Artifact opening and command copying require explicit clicks.
+- [x] No capsule action executes a command automatically.
+- [x] JSON and Markdown exports contain only the approved result.
+- [x] Complete deletion leaves no related rows, caches, indexes, or exports.
 
 ## Day 6 — Evaluation and hardening
 

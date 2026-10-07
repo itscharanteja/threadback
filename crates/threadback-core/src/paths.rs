@@ -6,6 +6,9 @@ pub const APP_IDENTIFIER: &str = "com.threadback.desktop";
 /// Overrides the database location, for development, tests, and the demo.
 pub const DATABASE_ENV: &str = "THREADBACK_DB";
 
+/// Overrides the exports directory for tests.
+pub const EXPORTS_ENV: &str = "THREADBACK_EXPORTS_DIR";
+
 /// The one database file shared by the desktop app and the `tb` command, so
 /// the two can never disagree about where evidence lives.
 pub fn database_path() -> PathBuf {
@@ -13,6 +16,38 @@ pub fn database_path() -> PathBuf {
         return PathBuf::from(path);
     }
     data_directory().join("threadback.db")
+}
+
+/// Directory where exported JSON and Markdown capsules are stored.
+/// When `THREADBACK_DB` is set (and `THREADBACK_EXPORTS_DIR` is not), exports
+/// live next to that database under `exports/` so tests stay isolated.
+pub fn exports_directory() -> PathBuf {
+    if let Some(path) = std::env::var_os(EXPORTS_ENV).filter(|value| !value.is_empty()) {
+        return PathBuf::from(path);
+    }
+    if let Some(db) = std::env::var_os(DATABASE_ENV).filter(|value| !value.is_empty()) {
+        if let Some(parent) = PathBuf::from(db).parent() {
+            return parent.join("exports");
+        }
+    }
+    #[cfg(test)]
+    {
+        std::env::temp_dir().join("threadback-test-exports")
+    }
+    #[cfg(not(test))]
+    {
+        let preferred = data_directory().join("exports");
+        if std::fs::create_dir_all(&preferred).is_ok() {
+            preferred
+        } else {
+            std::env::temp_dir().join("threadback-exports")
+        }
+    }
+}
+
+/// Directory where exports for a specific thread are written.
+pub fn thread_exports_directory(thread_id: &crate::ThreadId) -> PathBuf {
+    exports_directory().join(&thread_id.0)
 }
 
 #[cfg(target_os = "macos")]

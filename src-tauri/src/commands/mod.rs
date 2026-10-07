@@ -3,16 +3,19 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use chrono::Utc;
 use tauri::{App, Manager, State};
 use threadback_core::{
     AddNoteInput, AppStatus, ApprovalResult, ApprovalService, CancelToken, CapsuleModel,
     Checkpoint, CheckpointId, CheckpointService, CheckpointTrigger, ConfigurationService,
     ConfigurationStatus, ConnectionTestResult, Correction, CreateProjectInput, Database,
-    DomainError, EventId, EventPage, ModelConfigInput, OutboundService, PauseReason,
-    PayloadPreview, Project, RecoveryReport, Redactor, ResumeCapsule, SecretStore,
-    StartThreadInput, ThreadEvent, ThreadId, ThreadService, TokenFactoryClient, WorkThread,
-    approve_project, database_path, default_exclusions, default_secret_store, finish_generation,
-    plan_generation, recover_interrupted_threads, run_generation,
+    DeletionReceipt, DomainError, EventId, EventPage, ExportService, FileResult, ModelConfigInput,
+    OpenedArtifact, OutboundService, PauseReason, PayloadPreview, Project, ProjectId,
+    ProjectPolicy, RecoveryReport, RedactionTestInput, RedactionTestResult, Redactor,
+    ResumeCapsule, ResumeViewModel, RetentionReport, SecretStore, StartThreadInput, ThreadEvent,
+    ThreadId, ThreadService, TokenFactoryClient, WorkThread, approve_project, database_path,
+    default_exclusions, default_secret_store, finish_generation, plan_generation,
+    recover_interrupted_threads, run_generation, test_redaction,
 };
 
 const TIMELINE_PAGE_SIZE: u32 = 100;
@@ -33,6 +36,7 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(parent)?;
     }
     let database = Database::open(path)?;
+    let _ = database.expire_raw_events(Utc::now());
     // Threads still recording when the app last stopped are paused and reported.
     let recovery = recover_interrupted_threads(&database)?;
     app.manage(AppState {
@@ -78,6 +82,25 @@ pub fn projects_list(state: State<'_, AppState>) -> Result<Vec<Project>, DomainE
 }
 
 #[tauri::command]
+pub fn projects_get_policy(
+    project_id: ProjectId,
+    state: State<'_, AppState>,
+) -> Result<ProjectPolicy, DomainError> {
+    database(&state)?.find_project_policy(&project_id)
+}
+
+#[tauri::command]
+pub fn projects_update_policy(
+    policy: ProjectPolicy,
+    state: State<'_, AppState>,
+) -> Result<ProjectPolicy, DomainError> {
+    let db = database(&state)?;
+    let updated = db.upsert_project_policy(&policy)?;
+    let _ = db.expire_raw_events(Utc::now());
+    Ok(updated)
+}
+
+#[tauri::command]
 pub fn threads_list(state: State<'_, AppState>) -> Result<Vec<WorkThread>, DomainError> {
     ThreadService::new(&*database(&state)?).list_threads()
 }
@@ -97,6 +120,11 @@ pub fn threads_pause(
     state: State<'_, AppState>,
 ) -> Result<WorkThread, DomainError> {
     ThreadService::new(&*database(&state)?).pause(&thread_id, PauseReason::User)
+}
+
+#[tauri::command]
+pub fn threads_pause_all(state: State<'_, AppState>) -> Result<Vec<WorkThread>, DomainError> {
+    ThreadService::new(&*database(&state)?).pause_all()
 }
 
 #[tauri::command]
@@ -146,7 +174,9 @@ pub fn checkpoints_preview(
     excluded_event_ids: Vec<EventId>,
     state: State<'_, AppState>,
 ) -> Result<PayloadPreview, DomainError> {
-    OutboundService::new(&*database(&state)?).prepare(&checkpoint_id, &excluded_event_ids)
+    let db = database(&state)?;
+    let redactor = checkpoint_redactor(&db, &checkpoint_id)?;
+    OutboundService::with_redactor(&db, &redactor).prepare(&checkpoint_id, &excluded_event_ids)
 }
 
 /// Asks the model for a capsule from the payload the user reviewed.
@@ -174,12 +204,13 @@ pub async fn checkpoints_generate(
         // Phase 1, with the database: authorize, build the prompt, prepare the checks.
         let (plan, client, model_id) = {
             let guard = database.lock().map_err(|_| busy())?;
+            let redactor = checkpoint_redactor(&guard, &checkpoint_id)?;
             let plan = plan_generation(
                 &guard,
                 &checkpoint_id,
                 &excluded_event_ids,
                 &reviewed_hash,
-                Redactor::builtin(),
+                &redactor,
             )?;
             let configuration = ConfigurationService::new(&guard, &*secrets);
             let model_id = configuration.settings()?.model_id;
@@ -303,11 +334,65 @@ pub fn checkpoints_get(
 }
 
 #[tauri::command]
+pub fn checkpoints_get_resume(
+    checkpoint_id: CheckpointId,
+    state: State<'_, AppState>,
+) -> Result<ResumeViewModel, DomainError> {
+    CheckpointService::new(&*database(&state)?).get_resume(&checkpoint_id)
+}
+
+#[tauri::command]
+pub fn checkpoints_open_artifact(
+    checkpoint_id: CheckpointId,
+    relative_path: String,
+    state: State<'_, AppState>,
+) -> Result<OpenedArtifact, DomainError> {
+    CheckpointService::new(&*database(&state)?).open_artifact(&checkpoint_id, &relative_path)
+}
+
+#[tauri::command]
 pub fn threads_archive(
     thread_id: ThreadId,
     state: State<'_, AppState>,
 ) -> Result<WorkThread, DomainError> {
     ThreadService::new(&*database(&state)?).archive(&thread_id)
+}
+
+#[tauri::command]
+pub fn threads_delete(
+    thread_id: ThreadId,
+    state: State<'_, AppState>,
+) -> Result<DeletionReceipt, DomainError> {
+    ThreadService::new(&*database(&state)?).delete(&thread_id)
+}
+
+#[tauri::command]
+pub fn exports_json(
+    checkpoint_id: CheckpointId,
+    state: State<'_, AppState>,
+) -> Result<FileResult, DomainError> {
+    ExportService::new(&*database(&state)?).export_json(&checkpoint_id)
+}
+
+#[tauri::command]
+pub fn exports_markdown(
+    checkpoint_id: CheckpointId,
+    state: State<'_, AppState>,
+) -> Result<FileResult, DomainError> {
+    ExportService::new(&*database(&state)?).export_markdown(&checkpoint_id)
+}
+
+#[tauri::command]
+pub fn privacy_test_redaction(
+    input: RedactionTestInput,
+    state: State<'_, AppState>,
+) -> Result<RedactionTestResult, DomainError> {
+    test_redaction(&*database(&state)?, &input)
+}
+
+#[tauri::command]
+pub fn privacy_expire_events(state: State<'_, AppState>) -> Result<RetentionReport, DomainError> {
+    database(&state)?.expire_raw_events(Utc::now())
 }
 
 #[tauri::command]
@@ -338,6 +423,20 @@ pub fn events_capture_git(
     state: State<'_, AppState>,
 ) -> Result<ThreadEvent, DomainError> {
     ThreadService::new(&*database(&state)?).capture_git(&thread_id)
+}
+
+fn checkpoint_redactor(
+    db: &Database,
+    checkpoint_id: &CheckpointId,
+) -> Result<Redactor, DomainError> {
+    if let Some(checkpoint) = db.find_checkpoint(checkpoint_id)? {
+        if let Some(thread) = db.find_thread(&checkpoint.thread_id)? {
+            if let Ok(policy) = db.find_project_policy(&thread.project_id) {
+                return Redactor::new(&policy.redaction_patterns);
+            }
+        }
+    }
+    Redactor::new(&[])
 }
 
 fn database<'a, 'r>(

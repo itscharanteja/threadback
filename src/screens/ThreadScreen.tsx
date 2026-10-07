@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Checkpoint, Project, ThreadEvent, WorkThread } from "../bindings/contracts";
+import type { ApprovalResult, Checkpoint, Correction, Project, ThreadEvent, WorkThread } from "../bindings/contracts";
 import { checkpoints as checkpointsApi, events as eventsApi, threads as threadsApi } from "../api/commands";
 import { toDomainError } from "../api/errors";
-import { CapsuleView } from "../components/CapsuleView";
+import { ApprovedCapsule } from "../components/ApprovedCapsule";
+import { CapsuleReview } from "../components/CapsuleReview";
 import { CheckpointDraftView } from "../components/CheckpointDraftView";
 import { NoteForm } from "../components/NoteForm";
 import { PayloadPreviewPanel } from "../components/PayloadPreviewPanel";
@@ -19,6 +20,8 @@ interface ThreadScreenProps {
   onChanged: () => Promise<void> | void;
   /** Opens the model settings, for a generation that needs a key. */
   onOpenSettings?: () => void;
+  /** Called after the thread has been permanently deleted. */
+  onDeleted?: () => void;
   /** How often the evidence refreshes while the thread is recording. */
   refreshMs?: number;
 }
@@ -26,7 +29,14 @@ interface ThreadScreenProps {
 const sameEvents = (a: ThreadEvent[] | null, b: ThreadEvent[]) =>
   a !== null && a.length === b.length && a.every((event, index) => event.id === b[index].id);
 
-export function ThreadScreen({ thread, project, onChanged, onOpenSettings = () => {}, refreshMs = LIVE_REFRESH_MS }: ThreadScreenProps) {
+export function ThreadScreen({
+  thread,
+  project,
+  onChanged,
+  onOpenSettings = () => {},
+  onDeleted = () => {},
+  refreshMs = LIVE_REFRESH_MS,
+}: ThreadScreenProps) {
   const [events, setEvents] = useState<ThreadEvent[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [checkpoint, setCheckpoint] = useState<Checkpoint | null>(null);
@@ -34,16 +44,21 @@ export function ThreadScreen({ thread, project, onChanged, onOpenSettings = () =
   const [actionError, setActionError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [confirmingEnd, setConfirmingEnd] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [corrections, setCorrections] = useState<Correction[] | undefined>(undefined);
   const draftHeading = useRef<HTMLHeadingElement>(null);
   const capsuleHeading = useRef<HTMLHeadingElement>(null);
   const previewHeading = useRef<HTMLHeadingElement>(null);
   const confirmHeading = useRef<HTMLHeadingElement>(null);
+  const deleteHeading = useRef<HTMLHeadingElement>(null);
   const focusDraftNext = useRef(false);
   const focusCapsuleNext = useRef(false);
+  const focusPreviewNext = useRef(false);
 
   const recording = isRecording(thread.state);
-  const showsDraft = ["CHECKPOINT_DRAFT", "FAILED", "READY"].includes(thread.state);
+  const showsDraft = ["CHECKPOINT_DRAFT", "FAILED", "READY", "ARCHIVED"].includes(thread.state);
+  const canArchive = ["PAUSED", "READY", "FAILED"].includes(thread.state);
 
   const loadEvents = useCallback(async () => {
     try {
@@ -65,7 +80,9 @@ export function ThreadScreen({ thread, project, onChanged, onOpenSettings = () =
   useEffect(() => {
     setEvents(null);
     setCheckpoint(null);
+    setCorrections(undefined);
     setConfirmingEnd(false);
+    setConfirmingDelete(false);
     void loadEvents();
   }, [loadEvents]);
 
@@ -109,21 +126,35 @@ export function ThreadScreen({ thread, project, onChanged, onOpenSettings = () =
   }, [confirmingEnd]);
 
   useEffect(() => {
+    if (confirmingDelete) deleteHeading.current?.focus();
+  }, [confirmingDelete]);
+
+  useEffect(() => {
     if (reviewing) previewHeading.current?.focus();
   }, [reviewing]);
+
+  // After regenerating, the new checkpoint arrives a moment after the review opens.
+  useEffect(() => {
+    if (focusPreviewNext.current && reviewing && checkpoint && !checkpoint.draft) {
+      focusPreviewNext.current = false;
+      previewHeading.current?.focus();
+    }
+  }, [checkpoint, reviewing]);
 
   // Leaving the drafting states ends any review.
   useEffect(() => {
     if (!showsDraft) setReviewing(false);
   }, [showsDraft]);
 
-  async function perform(name: string, work: () => Promise<unknown>, success: string) {
+  async function perform(name: string, work: () => Promise<unknown>, success: string): Promise<boolean> {
     setBusy(name);
     setActionError(null);
     setStatus("");
+    let succeeded = false;
     try {
       await work();
       setStatus(success);
+      succeeded = true;
     } catch (failure) {
       setActionError(toDomainError(failure).message);
     } finally {
@@ -132,6 +163,7 @@ export function ThreadScreen({ thread, project, onChanged, onOpenSettings = () =
       await loadEvents();
       setBusy(null);
     }
+    return succeeded;
   }
 
   const saveMyPlace = () => {
@@ -144,11 +176,55 @@ export function ThreadScreen({ thread, project, onChanged, onOpenSettings = () =
     return perform("end", () => threadsApi.end(thread.id), "Thread ended and checkpoint saved.");
   };
 
+  const deleteThread = async () => {
+    setBusy("delete");
+    setActionError(null);
+    try {
+      await threadsApi.delete(thread.id);
+      setConfirmingDelete(false);
+      await onChanged();
+      onDeleted();
+    } catch (failure) {
+      setActionError(toDomainError(failure).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const discardDraft = async () => {
     if (!checkpoint) return;
     await perform("discard", () => checkpointsApi.discard(checkpoint.id), "Draft discarded. Recording has resumed.");
     setReviewing(false);
     document.getElementById("screen-title")?.focus();
+  };
+
+  /** Throws the unapproved draft away, saves the place again, and returns to the payload review. */
+  const regenerate = async () => {
+    if (!checkpoint) return;
+    const done = await perform(
+      "regenerate",
+      async () => {
+        await checkpointsApi.discard(checkpoint.id);
+        await checkpointsApi.savePlace(thread.id);
+      },
+      "Saved your place again. Review what will be sent to generate a new capsule.",
+    );
+    if (done) {
+      focusPreviewNext.current = true;
+      setReviewing(true);
+    }
+  };
+
+  const approved = async (result: ApprovalResult) => {
+    focusCapsuleNext.current = true;
+    setCorrections(result.corrections);
+    setCheckpoint(result.checkpoint);
+    setStatus(
+      result.corrections.length === 0
+        ? "Capsule approved as the model drafted it."
+        : `Capsule approved with ${pluralize(result.corrections.length, "recorded correction")}.`,
+    );
+    await onChanged();
   };
 
   const state = STATE_DISPLAY[thread.state];
@@ -201,6 +277,24 @@ export function ThreadScreen({ thread, project, onChanged, onOpenSettings = () =
             </button>
           </div>
         </section>
+      ) : confirmingDelete ? (
+        <section className="panel confirm" role="group" aria-labelledby="delete-confirm-title">
+          <h2 id="delete-confirm-title" tabIndex={-1} ref={deleteHeading}>
+            Permanently delete this thread?
+          </h2>
+          <p>
+            This permanently deletes the thread, all recorded events, checkpoint drafts, approved capsules, corrections,
+            and exported files on this computer. This cannot be undone.
+          </p>
+          <div className="actions">
+            <button type="button" className="danger" onClick={deleteThread} disabled={disabled}>
+              {busy === "delete" ? "Deleting…" : "Delete thread permanently"}
+            </button>
+            <button type="button" onClick={() => setConfirmingDelete(false)} disabled={disabled}>
+              Cancel
+            </button>
+          </div>
+        </section>
       ) : (
         <div className="actions" role="group" aria-label="Thread actions">
           {recording ? (
@@ -229,6 +323,28 @@ export function ThreadScreen({ thread, project, onChanged, onOpenSettings = () =
               </button>
             </>
           ) : null}
+          {thread.state === "READY" ? (
+            <button
+              type="button"
+              className="primary"
+              disabled={disabled}
+              onClick={() => perform("resume", () => threadsApi.resume(thread.id), "Thread resumed. New evidence interval started.")}
+            >
+              Resume thread
+            </button>
+          ) : null}
+          {canArchive ? (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => perform("archive", () => threadsApi.archive(thread.id), "Thread archived.")}
+            >
+              Archive thread
+            </button>
+          ) : null}
+          <button type="button" disabled={disabled} onClick={() => setConfirmingDelete(true)}>
+            Delete thread…
+          </button>
         </div>
       )}
 
@@ -262,11 +378,23 @@ export function ThreadScreen({ thread, project, onChanged, onOpenSettings = () =
           />
         ) : (
           <>
-            {checkpoint.draft ? <CapsuleView ref={capsuleHeading} checkpoint={checkpoint} /> : null}
+            {checkpoint.status === "approved" && checkpoint.approved ? (
+              <ApprovedCapsule ref={capsuleHeading} checkpoint={checkpoint} corrections={corrections} />
+            ) : checkpoint.draft ? (
+              <CapsuleReview
+                key={checkpoint.id}
+                ref={capsuleHeading}
+                checkpoint={checkpoint}
+                busy={disabled}
+                onApproved={approved}
+                onRegenerate={regenerate}
+              />
+            ) : null}
             <CheckpointDraftView
               ref={draftHeading}
               checkpoint={checkpoint}
               generated={Boolean(checkpoint.draft)}
+              canDiscard={checkpoint.status !== "approved"}
               busy={disabled}
               onReview={() => setReviewing(true)}
               onDiscard={discardDraft}

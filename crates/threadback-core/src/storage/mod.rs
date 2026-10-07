@@ -261,7 +261,81 @@ impl Database {
                 ],
             )
             .map_err(storage_error)?;
+        self.connection
+            .execute(
+                "INSERT OR IGNORE INTO project_policies
+                 (project_id, exclusions_json, retention_days, capture_git, capture_commands, capture_file_metadata, redaction_patterns_json)
+                 VALUES (?1, '[]', ?2, 1, 1, 1, '[]')",
+                params![project.id.0, crate::DEFAULT_RETENTION_DAYS],
+            )
+            .map_err(storage_error)?;
         Ok(())
+    }
+
+    pub fn find_project_policy(&self, project_id: &ProjectId) -> Result<crate::ProjectPolicy, DomainError> {
+        if self.find_project(project_id)?.is_none() {
+            return Err(DomainError::not_found("That project no longer exists."));
+        }
+        let policy = self
+            .connection
+            .query_row(
+                "SELECT exclusions_json, retention_days, capture_git, capture_commands, capture_file_metadata, redaction_patterns_json
+                 FROM project_policies WHERE project_id = ?1",
+                [&project_id.0],
+                |row| {
+                    let exclusions_json: String = row.get(0)?;
+                    let retention_days: u32 = row.get(1)?;
+                    let capture_git: i64 = row.get(2)?;
+                    let capture_commands: i64 = row.get(3)?;
+                    let capture_file_metadata: i64 = row.get(4)?;
+                    let redaction_json: String = row.get(5)?;
+                    Ok(crate::ProjectPolicy {
+                        project_id: project_id.clone(),
+                        exclusions: serde_json::from_str(&exclusions_json).map_err(to_sql_error)?,
+                        retention_days,
+                        capture_git: capture_git != 0,
+                        capture_commands: capture_commands != 0,
+                        capture_file_metadata: capture_file_metadata != 0,
+                        redaction_patterns: serde_json::from_str(&redaction_json).map_err(to_sql_error)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(storage_error)?;
+        Ok(policy.unwrap_or_else(|| crate::ProjectPolicy::default_for(project_id.clone())))
+    }
+
+    pub fn upsert_project_policy(&self, policy: &crate::ProjectPolicy) -> Result<crate::ProjectPolicy, DomainError> {
+        policy.validate()?;
+        if self.find_project(&policy.project_id)?.is_none() {
+            return Err(DomainError::not_found("That project no longer exists."));
+        }
+        let exclusions_json = serde_json::to_string(&policy.exclusions).map_err(json_error)?;
+        let redaction_json = serde_json::to_string(&policy.redaction_patterns).map_err(json_error)?;
+        self.connection
+            .execute(
+                "INSERT INTO project_policies
+                 (project_id, exclusions_json, retention_days, capture_git, capture_commands, capture_file_metadata, redaction_patterns_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(project_id) DO UPDATE SET
+                   exclusions_json = excluded.exclusions_json,
+                   retention_days = excluded.retention_days,
+                   capture_git = excluded.capture_git,
+                   capture_commands = excluded.capture_commands,
+                   capture_file_metadata = excluded.capture_file_metadata,
+                   redaction_patterns_json = excluded.redaction_patterns_json",
+                params![
+                    policy.project_id.0,
+                    exclusions_json,
+                    policy.retention_days,
+                    i64::from(policy.capture_git),
+                    i64::from(policy.capture_commands),
+                    i64::from(policy.capture_file_metadata),
+                    redaction_json,
+                ],
+            )
+            .map_err(storage_error)?;
+        Ok(policy.clone())
     }
 
     pub fn find_project(&self, id: &ProjectId) -> Result<Option<Project>, DomainError> {
@@ -871,6 +945,221 @@ impl Database {
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(storage_error)
     }
+
+    /// Transactionally deletes a thread and all of its checkpoints, corrections,
+    /// model call diagnostics, artifact refs, raw events, and on-disk exports,
+    /// then vacuums the database so deleted bytes do not remain in freed pages
+    /// or the write-ahead log.
+    pub fn delete_thread(
+        &self,
+        thread_id: &ThreadId,
+    ) -> Result<crate::DeletionReceipt, DomainError> {
+        let receipt = self.with_transaction(|db| {
+            if db.find_thread(thread_id)?.is_none() {
+                return Err(DomainError::not_found("That thread no longer exists."));
+            }
+            let corrections_deleted = db
+                .connection
+                .execute(
+                    "DELETE FROM corrections WHERE checkpoint_id IN (SELECT id FROM checkpoints WHERE thread_id = ?1)",
+                    [&thread_id.0],
+                )
+                .map_err(storage_error)? as u32;
+            let _ = db
+                .connection
+                .execute(
+                    "DELETE FROM model_calls WHERE checkpoint_id IN (SELECT id FROM checkpoints WHERE thread_id = ?1)",
+                    [&thread_id.0],
+                )
+                .map_err(storage_error)?;
+            let checkpoints_deleted = db
+                .connection
+                .execute(
+                    "DELETE FROM checkpoints WHERE thread_id = ?1",
+                    [&thread_id.0],
+                )
+                .map_err(storage_error)? as u32;
+            let artifacts_deleted = db
+                .connection
+                .execute(
+                    "DELETE FROM artifact_refs WHERE event_id IN (SELECT id FROM events WHERE thread_id = ?1)",
+                    [&thread_id.0],
+                )
+                .map_err(storage_error)? as u32;
+            let events_deleted = db
+                .connection
+                .execute(
+                    "DELETE FROM events WHERE thread_id = ?1",
+                    [&thread_id.0],
+                )
+                .map_err(storage_error)? as u32;
+            db.connection
+                .execute("DELETE FROM work_threads WHERE id = ?1", [&thread_id.0])
+                .map_err(storage_error)?;
+
+            let exports_deleted = remove_thread_exports(thread_id)?;
+
+            Ok(crate::DeletionReceipt {
+                thread_id: thread_id.clone(),
+                events_deleted,
+                checkpoints_deleted,
+                corrections_deleted,
+                artifacts_deleted,
+                exports_deleted,
+                deleted_at: Utc::now(),
+            })
+        })?;
+
+        let _ = self.connection.execute_batch(
+            "PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);",
+        );
+
+        Ok(receipt)
+    }
+
+    /// Expires raw events older than each project's configured `retention_days`
+    /// while preserving all checkpoints, approved capsules, and any source
+    /// events referenced by checkpoints.
+    pub fn expire_raw_events(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<crate::RetentionReport, DomainError> {
+        let expired = self.with_transaction(|db| {
+            let projects = db.list_projects()?;
+            if projects.is_empty() {
+                return Ok(0u32);
+            }
+
+            let protected_events = db.checkpoint_referenced_event_ids()?;
+            let mut total_expired = 0u32;
+
+            for project in projects {
+                let policy = db.find_project_policy(&project.id)?;
+                let cutoff = now - chrono::Duration::days(i64::from(policy.retention_days));
+                let cutoff_str = cutoff.to_rfc3339();
+
+                let candidate_ids: Vec<String> = {
+                    let mut stmt = db
+                        .connection
+                        .prepare(
+                            "SELECT e.id
+                             FROM events e
+                             JOIN work_threads t ON t.id = e.thread_id
+                             WHERE t.project_id = ?1 AND e.timestamp < ?2",
+                        )
+                        .map_err(storage_error)?;
+                    stmt.query_map(params![project.id.0, cutoff_str], |row| row.get(0))
+                        .map_err(storage_error)?
+                        .collect::<rusqlite::Result<Vec<_>>>()
+                        .map_err(storage_error)?
+                };
+
+                for event_id in candidate_ids {
+                    if protected_events.contains(&event_id) {
+                        continue;
+                    }
+                    let removed = db
+                        .connection
+                        .execute("DELETE FROM events WHERE id = ?1", [&event_id])
+                        .map_err(storage_error)?;
+                    total_expired += removed as u32;
+                }
+            }
+
+            Ok(total_expired)
+        })?;
+
+        if expired > 0 {
+            let _ = self.connection.execute_batch(
+                "PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);",
+            );
+        }
+
+        Ok(crate::RetentionReport {
+            raw_events_expired: expired,
+        })
+    }
+
+    fn checkpoint_referenced_event_ids(&self) -> Result<std::collections::HashSet<String>, DomainError> {
+        let mut protected = std::collections::HashSet::new();
+        let mut stmt = self
+            .connection
+            .prepare(
+                "SELECT start_event_id, end_event_id, draft_json, approved_json
+                 FROM checkpoints",
+            )
+            .map_err(storage_error)?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .map_err(storage_error)?;
+
+        for row in rows {
+            let (start_id, end_id, draft_json, approved_json) = row.map_err(storage_error)?;
+            protected.insert(start_id);
+            protected.insert(end_id);
+            for raw in [draft_json, approved_json].into_iter().flatten() {
+                if let Ok(capsule) = serde_json::from_str::<crate::ResumeCapsule>(&raw) {
+                    collect_capsule_event_ids(&capsule, &mut protected);
+                }
+            }
+        }
+        Ok(protected)
+    }
+}
+
+fn collect_capsule_event_ids(
+    capsule: &crate::ResumeCapsule,
+    out: &mut std::collections::HashSet<String>,
+) {
+    for item in &capsule.verified_facts {
+        for id in &item.source_event_ids {
+            out.insert(id.0.clone());
+        }
+    }
+    for item in &capsule.hypotheses {
+        for id in &item.source_event_ids {
+            out.insert(id.0.clone());
+        }
+    }
+    for item in &capsule.failed_attempts {
+        for id in &item.source_event_ids {
+            out.insert(id.0.clone());
+        }
+    }
+    for item in &capsule.relevant_artifacts {
+        for id in &item.source_event_ids {
+            out.insert(id.0.clone());
+        }
+    }
+    for id in &capsule.next_action.source_event_ids {
+        out.insert(id.0.clone());
+    }
+}
+
+fn remove_thread_exports(thread_id: &ThreadId) -> Result<u32, DomainError> {
+    let dir = crate::paths::thread_exports_directory(thread_id);
+    if !dir.exists() {
+        return Ok(0);
+    }
+    let mut count = 0u32;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            if entry.path().is_file() {
+                count += 1;
+            }
+        }
+    }
+    std::fs::remove_dir_all(&dir).map_err(|error| {
+        DomainError::storage(format!("Could not remove exported files: {error}"))
+    })?;
+    Ok(count)
 }
 
 fn thread_from_row(row: &Row<'_>) -> rusqlite::Result<WorkThread> {
@@ -1284,5 +1573,161 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db-shm"));
         let _ = std::fs::remove_file(path.with_extension("db-wal"));
+    }
+
+    #[test]
+    fn expire_raw_events_removes_old_unreferenced_events_while_preserving_approved_capsules() {
+        let db = Database::open_in_memory().unwrap();
+        let project = project();
+        db.insert_project(&project).unwrap();
+
+        let policy = db.find_project_policy(&project.id).unwrap();
+        assert_eq!(policy.retention_days, crate::DEFAULT_RETENTION_DAYS);
+
+        let thread = thread(project.id.clone());
+        db.insert_thread(&thread).unwrap();
+
+        let now = Utc::now();
+        let old_unreferenced = event(thread.id.clone(), now - Duration::days(20), "old noise");
+        let old_cited = event(thread.id.clone(), now - Duration::days(19), "cited evidence");
+        let recent_unreferenced = event(thread.id.clone(), now - Duration::days(3), "recent note");
+
+        db.insert_event(&old_unreferenced).unwrap();
+        db.insert_event(&old_cited).unwrap();
+        db.insert_event(&recent_unreferenced).unwrap();
+
+        let capsule = crate::ResumeCapsule {
+            schema_version: "1.0".into(),
+            goal: thread.goal.clone(),
+            checkpoint_summary: "Found the bug".into(),
+            verified_facts: vec![crate::SourcedClaim {
+                id: "fact-1".into(),
+                claim: "Cited evidence confirms the lock is skipped".into(),
+                source_event_ids: vec![old_cited.id.clone()],
+            }],
+            hypotheses: vec![],
+            failed_attempts: vec![],
+            unresolved_questions: vec![],
+            relevant_artifacts: vec![],
+            next_action: crate::NextAction {
+                instruction: "Run cargo test".into(),
+                justification: "Verify fix".into(),
+                success_check: "Passes".into(),
+                source_event_ids: vec![old_cited.id.clone()],
+            },
+            limitations: vec![],
+        };
+
+        let checkpoint = Checkpoint {
+            id: CheckpointId::new(),
+            thread_id: thread.id.clone(),
+            start_event_id: old_cited.id.clone(),
+            end_event_id: recent_unreferenced.id.clone(),
+            status: crate::STATUS_APPROVED.into(),
+            model_id: Some("gpt-5.4".into()),
+            prompt_version: Some("v1".into()),
+            payload: json!({}),
+            draft: Some(capsule.clone()),
+            approved: Some(capsule),
+            created_at: now,
+            approved_at: Some(now),
+        };
+        db.insert_checkpoint(&checkpoint).unwrap();
+
+        let report = db.expire_raw_events(now).unwrap();
+        assert_eq!(report.raw_events_expired, 1);
+
+        let remaining = db.list_all_events(&thread.id).unwrap();
+        let remaining_ids: Vec<_> = remaining.iter().map(|e| &e.id).collect();
+        assert!(!remaining_ids.contains(&&old_unreferenced.id));
+        assert!(remaining_ids.contains(&&old_cited.id));
+        assert!(remaining_ids.contains(&&recent_unreferenced.id));
+
+        let stored_checkpoint = db.find_checkpoint(&checkpoint.id).unwrap().unwrap();
+        assert!(stored_checkpoint.approved.is_some());
+    }
+
+    #[test]
+    fn delete_thread_removes_every_related_row_and_export() {
+        let db = Database::open_in_memory().unwrap();
+        let project = project();
+        db.insert_project(&project).unwrap();
+        let thread = thread(project.id);
+        db.insert_thread(&thread).unwrap();
+
+        let ev = event(thread.id.clone(), Utc::now(), "investigating");
+        db.insert_event(&ev).unwrap();
+        db.insert_artifact(&ArtifactRef {
+            id: crate::ArtifactId::new(),
+            event_id: ev.id.clone(),
+            artifact_type: "file".into(),
+            relative_path: "src/lib.rs".into(),
+            content_hash: "abc".into(),
+            line_hint: Some(10),
+        })
+        .unwrap();
+
+        let checkpoint = Checkpoint {
+            id: CheckpointId::new(),
+            thread_id: thread.id.clone(),
+            start_event_id: ev.id.clone(),
+            end_event_id: ev.id.clone(),
+            status: crate::STATUS_APPROVED.into(),
+            model_id: Some("gpt-5.4".into()),
+            prompt_version: Some("v1".into()),
+            payload: json!({}),
+            draft: None,
+            approved: None,
+            created_at: Utc::now(),
+            approved_at: Some(Utc::now()),
+        };
+        db.insert_checkpoint(&checkpoint).unwrap();
+        db.insert_correction(&Correction {
+            id: CorrectionId::new(),
+            checkpoint_id: checkpoint.id.clone(),
+            field_path: "goal".into(),
+            before: json!("old"),
+            after: json!("new"),
+            reason: None,
+            created_at: Utc::now(),
+        })
+        .unwrap();
+        db.record_model_call(
+            Some(&checkpoint.id),
+            &crate::ModelCallRecord {
+                model_id: "gpt-5.4".into(),
+                endpoint_host: "api.openai.com".into(),
+                status: "ok".into(),
+                http_status: Some(200),
+                latency_ms: 120,
+                prompt_tokens: Some(10),
+                completion_tokens: Some(20),
+                total_tokens: Some(30),
+                finish_reason: Some("stop".into()),
+                structured_output: crate::StructuredOutput::JsonSchema,
+                attempt: 1,
+            },
+        )
+        .unwrap();
+
+        let export_dir = crate::paths::thread_exports_directory(&thread.id);
+        std::fs::create_dir_all(&export_dir).unwrap();
+        std::fs::write(export_dir.join("capsule.json"), "{}").unwrap();
+        std::fs::write(export_dir.join("capsule.md"), "# Capsule").unwrap();
+
+        let receipt = db.delete_thread(&thread.id).unwrap();
+        assert_eq!(receipt.thread_id, thread.id);
+        assert_eq!(receipt.events_deleted, 1);
+        assert_eq!(receipt.checkpoints_deleted, 1);
+        assert_eq!(receipt.corrections_deleted, 1);
+        assert_eq!(receipt.artifacts_deleted, 1);
+        assert_eq!(receipt.exports_deleted, 2);
+        assert!(!export_dir.exists());
+
+        assert!(db.find_thread(&thread.id).unwrap().is_none());
+        assert!(db.find_checkpoint(&checkpoint.id).unwrap().is_none());
+        assert!(db.list_all_events(&thread.id).unwrap().is_empty());
+        assert!(db.list_corrections(&checkpoint.id).unwrap().is_empty());
+        assert_eq!(db.count_model_calls(&checkpoint.id).unwrap(), 0);
     }
 }

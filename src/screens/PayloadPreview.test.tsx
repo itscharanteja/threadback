@@ -263,13 +263,13 @@ describe("generating a capsule", () => {
     const heading = await screen.findByRole("heading", { name: "Resume capsule (draft)" });
     expect(heading).toHaveFocus();
     const capsule = heading.closest("section")!;
-    expect(within(capsule).getByText("Log the lock owner in both workers and rerun the focused test.")).toBeInTheDocument();
-    expect(within(capsule).getByText(/Both retries observe the same lock owner/)).toBeInTheDocument();
+    expect(within(capsule).getByDisplayValue("Log the lock owner in both workers and rerun the focused test.")).toBeInTheDocument();
+    expect(within(capsule).getByDisplayValue(/Both retries observe the same lock owner/)).toBeInTheDocument();
     expect(within(capsule).getByRole("heading", { name: "Verified facts" })).toBeInTheDocument();
-    expect(within(capsule).getByText(/The focused retry test made two provider calls\./)).toBeInTheDocument();
+    expect(within(capsule).getByDisplayValue(/The focused retry test made two provider calls\./)).toBeInTheDocument();
     expect(within(capsule).getByRole("heading", { name: "Hypotheses (not proven)" })).toBeInTheDocument();
-    expect(within(capsule).getByText(/medium confidence/)).toBeInTheDocument();
-    expect(within(capsule).getByText(/Do both workers share the same lock backend\?/)).toBeInTheDocument();
+    expect(within(capsule).getByDisplayValue(/Medium confidence/)).toBeInTheDocument();
+    expect(within(capsule).getByDisplayValue(/Do both workers share the same lock backend\?/)).toBeInTheDocument();
     expect(within(capsule).getByText(/Written by nvidia\/nemotron-3-super-120b-a12b/)).toBeInTheDocument();
     expect(within(capsule).getByText(/It is a draft/)).toBeInTheDocument();
 
