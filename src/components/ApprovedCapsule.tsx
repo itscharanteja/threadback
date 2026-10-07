@@ -1,6 +1,7 @@
-import { forwardRef, useEffect, useState } from "react";
-import type { Checkpoint, Correction, JsonValue, OpenedArtifact, RepositoryDrift } from "../bindings/contracts";
-import { checkpoints as checkpointsApi, exports as exportsApi } from "../api/commands";
+import { type FormEvent, forwardRef, useEffect, useState } from "react";
+import type { Checkpoint, Correction, JsonValue, OpenedArtifact, ProjectId, RepositoryDrift } from "../bindings/contracts";
+import { checkpoints as checkpointsApi, exports as exportsApi, projects as projectsApi } from "../api/commands";
+import { chooseProjectFolder } from "../api/dialog";
 import { toDomainError } from "../api/errors";
 import { formatTime, pluralize } from "../lib/format";
 import { CapsuleView } from "./CapsuleView";
@@ -27,6 +28,9 @@ export const ApprovedCapsule = forwardRef<HTMLHeadingElement, ApprovedCapsulePro
 ) {
   const [corrections, setCorrections] = useState<Correction[] | null>(known ?? null);
   const [drift, setDrift] = useState<RepositoryDrift | null>(null);
+  const [projectId, setProjectId] = useState<ProjectId | null>(null);
+  const [relinkPath, setRelinkPath] = useState("");
+  const [relinking, setRelinking] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [openedArtifact, setOpenedArtifact] = useState<OpenedArtifact | null>(null);
@@ -41,6 +45,7 @@ export const ApprovedCapsule = forwardRef<HTMLHeadingElement, ApprovedCapsulePro
       .getResume(checkpoint.id)
       .then((resume) => {
         setDrift(resume.drift);
+        setProjectId(resume.thread.projectId);
         if (!known) setCorrections(resume.corrections);
       })
       .catch((error) => {
@@ -53,6 +58,30 @@ export const ApprovedCapsule = forwardRef<HTMLHeadingElement, ApprovedCapsulePro
         }
       });
   }, [checkpoint.id, known]);
+
+  const handleRelink = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!projectId) return;
+    setRelinking(true);
+    setFailure(null);
+    setNotice(null);
+    try {
+      const updated = await projectsApi.relink({ projectId, rootPath: relinkPath });
+      const resume = await checkpointsApi.getResume(checkpoint.id);
+      setDrift(resume.drift);
+      setNotice(`Relinked project folder to ${updated.canonicalRoot}.`);
+      setRelinkPath("");
+    } catch (error) {
+      setFailure(toDomainError(error).message);
+    } finally {
+      setRelinking(false);
+    }
+  };
+
+  const browseRelinkFolder = async () => {
+    const selected = await chooseProjectFolder();
+    if (selected) setRelinkPath(selected);
+  };
 
   const copyInstruction = async (instruction: string) => {
     setFailure(null);
@@ -71,7 +100,11 @@ export const ApprovedCapsule = forwardRef<HTMLHeadingElement, ApprovedCapsulePro
     try {
       const opened = await checkpointsApi.openArtifact(checkpoint.id, relativePath);
       setOpenedArtifact(opened);
-      setNotice(`Opened ${opened.relativePath}.`);
+      setNotice(
+        opened.exists
+          ? `Opened ${opened.relativePath}.`
+          : `Artifact missing on disk; showing last known relative path (${opened.relativePath}).`,
+      );
     } catch (error) {
       setFailure(toDomainError(error).message);
     }
@@ -95,6 +128,9 @@ export const ApprovedCapsule = forwardRef<HTMLHeadingElement, ApprovedCapsulePro
     }
   };
 
+  const isRepoUnavailable =
+    drift?.signals.some((signal) => signal.kind === "repository_unavailable") ?? false;
+
   return (
     <>
       {drift ? (
@@ -114,6 +150,34 @@ export const ApprovedCapsule = forwardRef<HTMLHeadingElement, ApprovedCapsulePro
                 </li>
               ))}
             </ul>
+          ) : null}
+          {isRepoUnavailable && projectId ? (
+            <form onSubmit={(event) => void handleRelink(event)} noValidate>
+              <div className="field">
+                <label htmlFor="relink-root-path">Relink moved project folder</label>
+                <p className="hint" id="relink-root-path-hint">
+                  Your approved capsule is preserved. Choose the folder's new location to restore drift checks and file previews.
+                </p>
+                <div className="input-row">
+                  <input
+                    id="relink-root-path"
+                    type="text"
+                    aria-describedby="relink-root-path-hint"
+                    value={relinkPath}
+                    onChange={(event) => setRelinkPath(event.target.value)}
+                    placeholder="/Users/you/code/payments"
+                  />
+                  <button type="button" onClick={() => void browseRelinkFolder()}>
+                    Browse…
+                  </button>
+                </div>
+              </div>
+              <div className="actions">
+                <button type="submit" className="primary" disabled={relinking}>
+                  {relinking ? "Relinking…" : "Relink project folder"}
+                </button>
+              </div>
+            </form>
           ) : null}
         </section>
       ) : null}
@@ -159,7 +223,9 @@ export const ApprovedCapsule = forwardRef<HTMLHeadingElement, ApprovedCapsulePro
           {openedArtifact.exists && openedArtifact.contentPreview !== null ? (
             <pre className="preformatted">{openedArtifact.contentPreview}</pre>
           ) : (
-            <p className="empty">This file is not currently present on disk.</p>
+            <p className="empty">
+              Artifact missing on disk. Last known relative path: <code>{openedArtifact.relativePath}</code>
+            </p>
           )}
         </section>
       ) : null}

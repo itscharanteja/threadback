@@ -24,6 +24,8 @@ export type Project = { id: ProjectId, displayName: string, canonicalRoot: strin
 
 export type CreateProjectInput = { displayName: string, rootPath: string, };
 
+export type RelinkProjectInput = { projectId: ProjectId, rootPath: string, };
+
 export type ProjectPolicy = { projectId: ProjectId, exclusions: Array<string>, retentionDays: number, captureGit: boolean, captureCommands: boolean, captureFileMetadata: boolean, redactionPatterns: Array<string>, };
 
 export type DeletionReceipt = { threadId: ThreadId, eventsDeleted: number, checkpointsDeleted: number, correctionsDeleted: number, artifactsDeleted: number, exportsDeleted: number, deletedAt: string, };

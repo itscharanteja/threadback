@@ -42,6 +42,7 @@ fn render() -> String {
         Sensitivity::decl(),
         Project::decl(),
         CreateProjectInput::decl(),
+        RelinkProjectInput::decl(),
         ProjectPolicy::decl(),
         DeletionReceipt::decl(),
         RetentionReport::decl(),

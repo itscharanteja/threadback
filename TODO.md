@@ -122,20 +122,20 @@
 
 **Deliverable:** All ten prepared scenarios run repeatably; security, provenance, durability, and accessibility failures are resolved or explicitly documented.
 
-- [ ] R-02 Complete the deterministic payments fixture and one-command reset.
-- [ ] R-03a Encode all ten scenarios, expectations, forbidden claims, secrets, and acceptable next actions.
-- [ ] R-03b Produce metrics for provenance, leakage, next-action agreement, latency, and corrections.
-- [ ] R-04a Implement offline, invalid-JSON, missing-artifact, moved-project, conflicting-evidence, huge-output, and crash-recovery states.
-- [ ] R-04b Complete keyboard, focus, semantic-label, and non-color-only accessibility checks.
+- [x] R-02 Complete the deterministic payments fixture and one-command reset.
+- [x] R-03a Encode all ten scenarios, expectations, forbidden claims, secrets, and acceptable next actions.
+- [x] R-03b Produce metrics for provenance, leakage, next-action agreement, latency, and corrections.
+- [x] R-04a Implement offline, invalid-JSON, missing-artifact, moved-project, conflicting-evidence, huge-output, and crash-recovery states.
+- [x] R-04b Complete keyboard, focus, semantic-label, and non-color-only accessibility checks.
 
 ### Day 6 verification
 
-- [ ] Unsupported verified facts after validation: zero.
-- [ ] Seeded secret leakage: zero.
-- [ ] Outside-root access: zero successful attempts.
-- [ ] Acknowledged events lost during restart test: zero.
-- [ ] Evaluation results report observed values separately from targets.
-- [ ] Known limitations are written down rather than hidden.
+- [x] Unsupported verified facts after validation: zero.
+- [x] Seeded secret leakage: zero.
+- [x] Outside-root access: zero successful attempts.
+- [x] Acknowledged events lost during restart test: zero.
+- [x] Evaluation results report observed values separately from targets.
+- [x] Known limitations are written down rather than hidden.
 
 ## Day 7 — Packaging and release evidence
 

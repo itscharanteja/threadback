@@ -21,6 +21,7 @@ import type {
   RecoveryReport,
   RedactionTestInput,
   RedactionTestResult,
+  RelinkProjectInput,
   ResumeCapsule,
   ResumeViewModel,
   RetentionReport,
@@ -33,6 +34,10 @@ import type {
 export const projects = {
   create(input: CreateProjectInput): Promise<Project> {
     return invoke<Project>("projects_create", { input });
+  },
+
+  relink(input: RelinkProjectInput): Promise<Project> {
+    return invoke<Project>("projects_relink", { input });
   },
 
   list(): Promise<Project[]> {

@@ -18,7 +18,8 @@
     "test:ui": "vitest run",
     "demo:attempt-fix": "node scripts/demo-step.mjs attempt-fix",
     "demo:revert-fix": "node scripts/demo-step.mjs revert-fix",
-    "demo:drift": "node scripts/demo-step.mjs drift"
+    "demo:drift": "node scripts/demo-step.mjs drift",
+    "eval": "$HOME/.cargo/bin/cargo run -p threadback-core --example run_evaluation"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

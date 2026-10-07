@@ -12,10 +12,10 @@ use threadback_core::{
     DeletionReceipt, DomainError, EventId, EventPage, ExportService, FileResult, ModelConfigInput,
     OpenedArtifact, OutboundService, PauseReason, PayloadPreview, Project, ProjectId,
     ProjectPolicy, RecoveryReport, RedactionTestInput, RedactionTestResult, Redactor,
-    ResumeCapsule, ResumeViewModel, RetentionReport, SecretStore, StartThreadInput, ThreadEvent,
-    ThreadId, ThreadService, TokenFactoryClient, WorkThread, approve_project, database_path,
-    default_exclusions, default_secret_store, finish_generation, plan_generation,
-    recover_interrupted_threads, run_generation, test_redaction,
+    RelinkProjectInput, ResumeCapsule, ResumeViewModel, RetentionReport, SecretStore,
+    StartThreadInput, ThreadEvent, ThreadId, ThreadService, TokenFactoryClient, WorkThread,
+    approve_project, database_path, default_exclusions, default_secret_store, finish_generation,
+    plan_generation, recover_interrupted_threads, relink_project, run_generation, test_redaction,
 };
 
 const TIMELINE_PAGE_SIZE: u32 = 100;
@@ -68,6 +68,14 @@ pub fn projects_create(
     state: State<'_, AppState>,
 ) -> Result<Project, DomainError> {
     approve_project(&*database(&state)?, input)
+}
+
+#[tauri::command]
+pub fn projects_relink(
+    input: RelinkProjectInput,
+    state: State<'_, AppState>,
+) -> Result<Project, DomainError> {
+    relink_project(&*database(&state)?, input)
 }
 
 /// The exclusions applied to every project, shown during onboarding.

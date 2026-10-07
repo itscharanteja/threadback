@@ -26,10 +26,14 @@ Run the commands below **from inside the workspace folder**, using
 | 1 | `tb run -- npm run test:retry` | Fails: `2 !== 1`, "expected exactly one provider call". The output also contains the fake credential `nbf_demo_7F4A91C2_DO_NOT_SEND`. |
 | 2 | `npm run demo:attempt-fix` (from the repository root), then step 1 again | The middleware backoff changed, and the test fails exactly the same way. |
 | 3 | Add notes: **Fact** "The focused retry test made two provider calls."; **Hypothesis** "A second worker bypasses the distributed lock."; **Question** "Do both workers share the same lock backend?" | Each appears in the timeline with its label. |
-| 4 | **Save My Place** | A checkpoint draft appears in well under two seconds. |
-| 5 | (Later) preview the outbound payload | The fake credential must be blocked. |
-| 6 | `npm run demo:drift` (from the repository root) | While you were away: another branch, a new commit, and an edited file. |
-| 7 | Resume from the lock-owner check: `LOCK_DEBUG=1 tb run -- npm run test:retry` | The log shows `worker-a` on `lock-backend-1` and `worker-b` on `lock-backend-2`: the workers do not share a lock. |
+| 4 | **Save My Place** | A checkpoint draft appears in well under two seconds, even offline. |
+| 5 | **Review what will be sent…** | The outbound payload preview shows `[REDACTED:bearer-token]` in place of `nbf_demo_7F4A91C2_DO_NOT_SEND`, with per-entry exclusion controls and payload fingerprint. |
+| 6 | **Generate capsule** | Nemotron produces a validated resume capsule draft citing only local checkpoint event IDs. |
+| 7 | Inspect the verified fact source, optionally edit or relabel items, and click **Approve capsule** | The source expands inline; approval stores the approved capsule while keeping the original model draft untouched. |
+| 8 | `npm run demo:drift` (from the repository root) | While you were away: another branch (`hotfix/review-feedback`), a new commit, and an edited file (`src/lock.mjs`). |
+| 9 | Reopen the thread / approved capsule | **Repository state since checkpoint** highlights branch, HEAD, and working-tree drift before any resume action. |
+| 10 | Click **Copy next action** and **Open file src/payment-retry.mjs**, then click **Resume thread** | Nothing executes automatically; the command is copied, the file preview opens, and the thread moves to `RESUMED`. |
+| 11 | Run the lock-owner check: `LOCK_DEBUG=1 tb run -- npm run test:retry` | The log shows `worker-a` on `lock-backend-1` and `worker-b` on `lock-backend-2`: the workers do not share a lock. |
 
 ## Other cases
 

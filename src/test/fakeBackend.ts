@@ -523,6 +523,25 @@ export class FakeBackend {
         return [];
       case "projects_list":
         return this.projectsList;
+      case "projects_relink": {
+        const { projectId, rootPath } = args.input;
+        if (!String(rootPath ?? "").trim()) {
+          throw failure("INVALID_INPUT", "New project folder is required.", "rootPath");
+        }
+        const project = this.projectsList.find((p) => p.id === projectId) ?? this.projectsList[0];
+        if (!project) throw failure("NOT_FOUND", "That project no longer exists.");
+        project.canonicalRoot = String(rootPath).trim();
+        project.updatedAt = new Date().toISOString();
+        this.drift = {
+          checked: true,
+          hasDrift: false,
+          summary: "Repository matches the checkpoint snapshot (same branch, HEAD, and working tree).",
+          signals: [],
+          checkpointSnapshot: null,
+          currentSnapshot: null,
+        };
+        return { ...project };
+      }
       case "projects_default_exclusions":
         return [".env", ".env.*", "*.pem", "*.key", ".git/**", "node_modules/**", "target/**"];
       case "projects_get_policy":

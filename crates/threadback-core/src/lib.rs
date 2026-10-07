@@ -4,6 +4,7 @@ pub mod collectors;
 pub mod config;
 pub mod domain;
 pub mod error;
+pub mod evaluation;
 pub mod export;
 pub mod inference;
 pub mod outbound;
@@ -32,6 +33,10 @@ pub use config::{
 };
 pub use domain::*;
 pub use error::{DomainError, ErrorCode};
+pub use evaluation::{
+    EvaluationReport, EvaluationSummary, MetricComparison, ScenarioOutcome, ScenarioSpec,
+    load_scenario_specs, render_evaluation_markdown, run_evaluation_suite,
+};
 pub use export::{ExportService, FileResult, render_markdown};
 #[cfg(feature = "model-client")]
 pub use inference::{CancelToken, TokenFactoryClient};
@@ -49,7 +54,7 @@ pub use outbound::{
 };
 pub use paths::database_path;
 pub use privacy::{Finding, FindingKind, Redaction, Redactor, StreamRedactor, test_redaction};
-pub use projects::approve_project;
+pub use projects::{approve_project, relink_project};
 pub use storage::{Database, LatencySummary};
 pub use threads::{
     LifecycleAction, PauseReason, RecoveryReport, ThreadService, recover_interrupted_threads,

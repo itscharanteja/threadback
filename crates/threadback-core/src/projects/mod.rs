@@ -2,7 +2,7 @@ use chrono::Utc;
 
 use crate::{
     CreateProjectInput, Database, DomainError, Project, ProjectBoundary, ProjectId,
-    capture_snapshot,
+    RelinkProjectInput, capture_snapshot,
 };
 
 /// Approves a folder as a ThreadBack project. Everything that would make a
@@ -37,6 +37,36 @@ pub fn approve_project(
     };
     database.insert_project(&project)?;
     Ok(project)
+}
+
+/// Relinks an existing project to a moved or renamed folder on disk while
+/// keeping all threads, events, checkpoints, and approved capsules intact.
+pub fn relink_project(
+    database: &Database,
+    input: RelinkProjectInput,
+) -> Result<Project, DomainError> {
+    input.validate()?;
+    if database.find_project(&input.project_id)?.is_none() {
+        return Err(DomainError::not_found("That project no longer exists."));
+    }
+    let policy = database
+        .find_project_policy(&input.project_id)
+        .unwrap_or_else(|_| crate::ProjectPolicy::default_for(input.project_id.clone()));
+    let boundary = ProjectBoundary::new(&input.root_path, &policy.exclusions)?;
+    let canonical_root = boundary.root().to_string_lossy().into_owned();
+
+    if let Some(existing) = database.find_project_by_root(&canonical_root)? {
+        if existing.id != input.project_id {
+            return Err(DomainError::invalid_input(
+                "That folder is already linked to another approved project.",
+                "rootPath",
+            ));
+        }
+    }
+    capture_snapshot(&boundary)
+        .map_err(|error| DomainError::invalid_input(error.message, "rootPath"))?;
+
+    database.update_project_root(&input.project_id, &canonical_root)
 }
 
 #[cfg(test)]

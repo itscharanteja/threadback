@@ -272,6 +272,26 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_project_root(
+        &self,
+        project_id: &ProjectId,
+        canonical_root: &str,
+    ) -> Result<Project, DomainError> {
+        let now = Utc::now();
+        let rows = self
+            .connection
+            .execute(
+                "UPDATE projects SET canonical_root = ?1, updated_at = ?2 WHERE id = ?3",
+                params![canonical_root, now.to_rfc3339(), project_id.0],
+            )
+            .map_err(storage_error)?;
+        if rows == 0 {
+            return Err(DomainError::not_found("That project no longer exists."));
+        }
+        self.find_project(project_id)?
+            .ok_or_else(|| DomainError::not_found("That project no longer exists."))
+    }
+
     pub fn find_project_policy(&self, project_id: &ProjectId) -> Result<crate::ProjectPolicy, DomainError> {
         if self.find_project(project_id)?.is_none() {
             return Err(DomainError::not_found("That project no longer exists."));

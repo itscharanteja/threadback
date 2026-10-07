@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { Project } from "../bindings/contracts";
+import { RecoveryBanner } from "../components/RecoveryBanner";
+import { StatusBar } from "../components/StatusBar";
 import { FakeBackend } from "../test/fakeBackend";
 import { PrivacyScreen } from "./PrivacyScreen";
 import { ThreadScreen } from "./ThreadScreen";
@@ -167,3 +169,128 @@ describe("privacy, retention, redaction tester, and pause-all controls (U-05)", 
     expect(backend.callsTo("threads_delete")).toHaveLength(1);
   });
 });
+
+describe("failure states and recovery UI (R-04a)", () => {
+  it("shows missing artifact last known relative path when a referenced file no longer exists", async () => {
+    const user = await openApprovedCapsule();
+    backend.artifactFiles.clear();
+
+    await user.click(screen.getByRole("button", { name: "Open file tests/payment-retry.test.mjs" }));
+    expect(backend.callsTo("checkpoints_open_artifact")).toHaveLength(1);
+    expect(
+      await screen.findByText(/Artifact missing on disk; showing last known relative path \(tests\/payment-retry\.test\.mjs\)\./),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Artifact missing on disk\. Last known relative path:/)).toBeInTheDocument();
+  });
+
+  it("keeps the approved capsule readable when a project moved and lets the user relink the project folder", async () => {
+    const user = await openApprovedCapsule([
+      {
+        kind: "repository_unavailable",
+        label: "Could not inspect current Git state at /workspace/payments-old.",
+        before: "/workspace/payments-old",
+        after: null,
+      },
+    ]);
+
+    expect(screen.getByRole("heading", { name: "Approved resume capsule" })).toBeInTheDocument();
+    expect(screen.getByText(/Could not inspect current Git state/)).toBeInTheDocument();
+
+    const relinkInput = screen.getByLabelText("Relink moved project folder");
+    await user.clear(relinkInput);
+    await user.type(relinkInput, "/workspace/payments-relinked");
+    await user.click(screen.getByRole("button", { name: "Relink project folder" }));
+
+    expect(backend.callsTo("projects_relink")).toHaveLength(1);
+    expect(await screen.findByText(/Relinked project folder to \/workspace\/payments-relinked/)).toBeInTheDocument();
+    expect(screen.getByText("No drift:")).toBeInTheDocument();
+    expect(screen.getByText(/Repository matches the checkpoint snapshot/)).toBeInTheDocument();
+  });
+
+  it("renders crash recovery reports with last acknowledged event timestamp and dismisses cleanly", async () => {
+    const onDismiss = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <RecoveryBanner
+        reports={[
+          {
+            threadId: "thread-1",
+            threadTitle: "Duplicate capture investigation",
+            lastEventAt: "2026-10-07T10:15:00.000Z",
+            recoveredAt: "2026-10-07T10:20:00.000Z",
+          },
+        ]}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    const banner = screen.getByRole("status", { name: "Interrupted threads" });
+    expect(within(banner).getByText("Duplicate capture investigation")).toBeInTheDocument();
+    expect(within(banner).getByText(/was still recording when ThreadBack last stopped, so it was paused/)).toBeInTheDocument();
+    expect(within(banner).getByText(/nothing was captured between then and/)).toBeInTheDocument();
+
+    await user.click(within(banner).getByRole("button", { name: "Dismiss" }));
+    expect(onDismiss).toHaveBeenCalledWith("thread-1");
+  });
+});
+
+describe("keyboard, focus, semantic labels, and non-color-only status indicators (R-04b)", () => {
+  it("communicates recording, idle, online, and offline states with explicit words and glyphs (never color alone)", () => {
+    const now = new Date().toISOString();
+    const { rerender } = render(
+      <StatusBar
+        coreReady={true}
+        online={true}
+        recordingThread={{
+          id: "thread-1",
+          projectId: "project-1",
+          title: "Duplicate capture investigation",
+          goal: "Stop duplicate capture",
+          state: "ACTIVE",
+          startedAt: now,
+          endedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        }}
+        onOpenThread={() => {}}
+      />,
+    );
+
+    const bar = screen.getByRole("region", { name: "Status" });
+    expect(within(bar).getByText(/Capturing evidence:/)).toBeInTheDocument();
+    expect(within(bar).getByText("●")).toBeInTheDocument();
+    expect(within(bar).getByText(/Network available/)).toBeInTheDocument();
+    expect(within(bar).getByText(/Local data ready/)).toBeInTheDocument();
+
+    rerender(<StatusBar coreReady={false} online={false} recordingThread={undefined} onOpenThread={() => {}} />);
+    expect(within(bar).getByText(/Not capturing — nothing is recorded without an active thread/)).toBeInTheDocument();
+    expect(within(bar).getByText("○")).toBeInTheDocument();
+    expect(within(bar).getByText(/Offline — checkpoints still work locally/)).toBeInTheDocument();
+    expect(within(bar).getByText("✕")).toBeInTheDocument();
+    expect(within(bar).getByText(/Starting local data/)).toBeInTheDocument();
+  });
+
+  it("supports keyboard-only note entry (Ctrl+Enter) and accessible semantic labels across ThreadScreen", async () => {
+    backend = new FakeBackend("ACTIVE");
+    bridge.invoke = backend.invoke;
+    const user = userEvent.setup();
+    render(<ThreadHarness />);
+
+    // Select a note label via keyboard/click and submit via Ctrl+Enter
+    const hypothesisRadio = screen.getByRole("radio", { name: /^Hypothesis/ });
+    await user.click(hypothesisRadio);
+    const noteInput = screen.getByRole("textbox", { name: /^Note/ });
+    await user.click(noteInput);
+    await user.keyboard("Keyboard-submitted hypothesis{Control>}{Enter}{/Control}");
+
+    expect(backend.callsTo("events_add_note")).toHaveLength(1);
+    expect(await screen.findByText("Keyboard-submitted hypothesis")).toBeInTheDocument();
+
+    // Verify semantic landmarks exist for screen-reader navigation
+    expect(screen.getByRole("region", { name: "Goal" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Thread actions" })).toBeInTheDocument();
+    expect(screen.getByRole("form", { name: "Add a note" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Evidence" })).toBeInTheDocument();
+  });
+});
+

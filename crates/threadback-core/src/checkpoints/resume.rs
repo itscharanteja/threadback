@@ -319,7 +319,38 @@ pub fn open_checkpoint_artifact(
         .find_project_policy(&project.id)
         .unwrap_or_else(|_| crate::ProjectPolicy::default_for(project.id.clone()));
 
-    let boundary = ProjectBoundary::new(&project.canonical_root, &policy.exclusions)?;
+    let boundary = match ProjectBoundary::new(&project.canonical_root, &policy.exclusions) {
+        Ok(b) => b,
+        Err(error) => {
+            let in_approved = checkpoint
+                .approved
+                .as_ref()
+                .map(|c| {
+                    c.relevant_artifacts
+                        .iter()
+                        .any(|a| a.relative_path == relative_path)
+                })
+                .unwrap_or(false);
+            if in_approved
+                && !relative_path.is_empty()
+                && !relative_path.starts_with('/')
+                && !relative_path.split('/').any(|p| p == "..")
+            {
+                let fallback = std::path::Path::new(&project.canonical_root)
+                    .join(relative_path)
+                    .to_string_lossy()
+                    .into_owned();
+                return Ok(OpenedArtifact {
+                    relative_path: relative_path.to_owned(),
+                    resolved_path: fallback,
+                    exists: false,
+                    content_preview: None,
+                    truncated: false,
+                });
+            }
+            return Err(error);
+        }
+    };
     let resolved = boundary.resolve(relative_path)?;
     let full_path = boundary.root().join(&resolved.relative);
     let exists = full_path.is_file();

@@ -11,8 +11,8 @@ use std::{
 use tempfile::TempDir;
 use threadback_core::{
     AddNoteInput, CheckpointPayload, CheckpointService, CheckpointTrigger, CreateProjectInput,
-    Database, EventPayload, GitSnapshot, NoteLabel, ProjectBoundary, StartThreadInput, ThreadId,
-    ThreadService, ThreadState, approve_project, capture_snapshot,
+    Database, EventPayload, GitSnapshot, NoteLabel, OutboundService, ProjectBoundary,
+    StartThreadInput, ThreadId, ThreadService, ThreadState, approve_project, capture_snapshot,
 };
 
 const FAKE_SECRET: &str = "nbf_demo_7F4A91C2_DO_NOT_SEND";
@@ -283,6 +283,117 @@ fn the_demo_path_from_failing_test_to_drift() {
     );
     demo.assert_secret_not_on_disk();
 
+    // 7. Preview the outbound payload: the seeded fake secret is already redacted
+    //    and never appears in the preview or approved payload.
+    let preview = OutboundService::new(&db)
+        .prepare(&checkpoint.id, &[])
+        .unwrap();
+    assert!(preview.can_generate);
+    assert!(
+        !preview.payload_json.contains(FAKE_SECRET)
+            && !preview.payload_json.contains("nbf_demo"),
+        "the outbound payload never contains the seeded secret"
+    );
+
+    // 8. Generate the capsule draft from the reviewed payload.
+    let command_finished_id = payload
+        .entries
+        .iter()
+        .find(|e| e.kind == "command.finished")
+        .unwrap()
+        .event_id
+        .0
+        .clone();
+    let hypothesis_note_id = payload
+        .entries
+        .iter()
+        .find(|e| e.kind == "note.added" && e.content["label"] == "hypothesis")
+        .unwrap()
+        .event_id
+        .0
+        .clone();
+
+    struct DemoModel {
+        fact_source: String,
+        hyp_source: String,
+    }
+    impl threadback_core::CapsuleModel for DemoModel {
+        fn complete(
+            &self,
+            _request: &threadback_core::PromptRequest,
+        ) -> Result<threadback_core::ModelReply, threadback_core::DomainError> {
+            let reply = serde_json::json!({
+                "schema_version": "1.0",
+                "goal": "Find why retries produce a second provider capture",
+                "checkpoint_summary": "The focused retry test still makes two provider calls after changing the retry middleware backoff.",
+                "verified_facts": [{
+                    "id": "fact_1",
+                    "claim": "The focused retry test failed with two provider calls (2 !== 1).",
+                    "source_event_ids": [self.fact_source]
+                }],
+                "hypotheses": [{
+                    "id": "hyp_1",
+                    "claim": "A second worker bypasses the distributed lock because workers do not share a lock backend.",
+                    "confidence": "medium",
+                    "source_event_ids": [self.hyp_source]
+                }],
+                "failed_attempts": [{
+                    "action": "Increased retry middleware backoff from 0ms to 250ms.",
+                    "outcome": "The focused retry test still failed with two provider calls.",
+                    "learning": "Middleware backoff alone does not prevent the second provider call.",
+                    "source_event_ids": [self.fact_source]
+                }],
+                "unresolved_questions": [
+                    "Do both workers share the same lock backend?"
+                ],
+                "relevant_artifacts": [{
+                    "type": "file",
+                    "relative_path": "src/payment-retry.mjs",
+                    "reason": "Inspect how worker-a and worker-b configure their lock backends.",
+                    "source_event_ids": [self.fact_source]
+                }],
+                "next_action": {
+                    "instruction": "LOCK_DEBUG=1 tb run -- npm run test:retry",
+                    "justification": "Log which lock backend each worker uses during the retry test.",
+                    "success_check": "Confirm whether worker-a and worker-b use different lock backend instances.",
+                    "source_event_ids": [self.fact_source]
+                },
+                "limitations": [
+                    "Lock backend ownership has not been logged yet."
+                ]
+            });
+            Ok(threadback_core::ModelReply {
+                text: reply.to_string(),
+            })
+        }
+    }
+
+    let generated_checkpoint = threadback_core::generate_draft(
+        &db,
+        &checkpoint.id,
+        &[],
+        &preview.payload_hash,
+        threadback_core::Redactor::builtin(),
+        &DemoModel {
+            fact_source: command_finished_id.clone(),
+            hyp_source: hypothesis_note_id,
+        },
+        "nvidia/nemotron-3-super-120b-a12b",
+    )
+    .unwrap();
+    let draft_capsule = generated_checkpoint.draft.clone().unwrap();
+
+    // 9. Inspect the verified fact and source event, then approve the capsule.
+    assert_eq!(
+        draft_capsule.verified_facts[0].source_event_ids[0].0,
+        command_finished_id
+    );
+    let approval = threadback_core::ApprovalService::new(&db)
+        .approve(&checkpoint.id, draft_capsule)
+        .unwrap();
+    assert_eq!(approval.thread.state, ThreadState::Ready);
+    assert!(approval.checkpoint.approved.is_some());
+
     // 10. While the user is away the repository changes: branch, HEAD, status.
     demo.step("drift");
     let boundary = ProjectBoundary::new(&demo.workspace, &[]).unwrap();
@@ -294,15 +405,41 @@ fn the_demo_path_from_failing_test_to_drift() {
         "status drift"
     );
     assert_eq!(now.branch.as_deref(), Some("hotfix/review-feedback"));
-    let paths: Vec<_> = now
-        .changed_paths
-        .iter()
-        .map(|change| change.path.as_str())
-        .collect();
+
+    // 11. Reopen the capsule, verify drift signals (branch, HEAD, working tree),
+    //     open the recommended artifact, and resume from the lock-owner check.
+    let resume_view = CheckpointService::new(&db)
+        .get_resume(&checkpoint.id)
+        .unwrap();
+    assert!(resume_view.drift.has_drift);
+    assert_eq!(resume_view.drift.signals.len(), 3);
     assert_eq!(
-        paths,
-        ["src/lock.mjs", "src/retry-middleware.mjs"],
-        "a new path appears"
+        resume_view.drift.signals[0].kind,
+        threadback_core::DriftKind::BranchChanged
+    );
+    assert_eq!(
+        resume_view.drift.signals[1].kind,
+        threadback_core::DriftKind::HeadChanged
+    );
+    assert_eq!(
+        resume_view.drift.signals[2].kind,
+        threadback_core::DriftKind::WorkingTreeChanged
+    );
+
+    let artifact = CheckpointService::new(&db)
+        .open_artifact(&checkpoint.id, "src/payment-retry.mjs")
+        .unwrap();
+    assert!(artifact.exists);
+    assert!(artifact.content_preview.unwrap().contains("lock-backend-2"));
+
+    let resumed = ThreadService::new(&db).resume(&demo.thread_id).unwrap();
+    assert_eq!(resumed.state, ThreadState::Resumed);
+    let lock_check = demo.run(
+        &["npm", "run", "--silent", "test:retry"],
+        &[("LOCK_DEBUG", "1")],
+    );
+    assert!(
+        String::from_utf8_lossy(&lock_check.stdout).contains("worker=worker-b backend=lock-backend-2")
     );
 }
 

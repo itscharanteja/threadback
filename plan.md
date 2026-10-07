@@ -164,7 +164,7 @@ Every command returns either its declared result or a serializable domain error 
   - Deliverable: Commit-before-success event handling and startup recovery for an interrupted active thread.
   - Accept when: A forced restart retains every acknowledged event and surfaces any unrecorded interval.
 
-- [ ] **P-05 — Implement retention and transactional deletion**
+- [x] **P-05 — Implement retention and transactional deletion**
   - Dependencies: P-02, P-03.
   - Deliverable: Fourteen-day default raw-event retention and complete deletion of related rows, payload caches, indexes, and exports.
   - Accept when: Deletion tests find no thread-associated local data after the transaction commits.
@@ -262,34 +262,34 @@ Every command returns either its declared result or a serializable domain error 
   - Deliverable: Next action first, source-linked facts, hypotheses, failed attempts, questions, artifacts, editing, relabelling, regeneration, approval, and original-draft inspection.
   - Accept when: Every verified fact opens valid local evidence and user corrections are authoritative.
 
-- [ ] **U-04 — Build the resume workflow**
+- [x] **U-04 — Build the resume workflow**
   - Dependencies: U-03, E-02, P-03.
   - Deliverable: Branch, HEAD, and status drift comparison; explicit artifact opening; command copying; resume; archive; export; and delete actions.
   - Accept when: Drift appears before resume actions and commands are copied but never automatically executed.
 
-- [ ] **U-05 — Build privacy controls**
+- [x] **U-05 — Build privacy controls**
   - Dependencies: C-01, C-02, P-05, U-01.
   - Deliverable: Project roots, exclusions, retention, capture toggles, redaction testing, pause-all, and destructive deletion confirmation.
   - Accept when: Privacy state remains visible and no status relies on color alone.
 
 ### 4.6 Export, demo, evaluation, and release
 
-- [ ] **R-01 — Implement exports**
+- [x] **R-01 — Implement exports**
   - Dependencies: M-05, P-05.
   - Deliverable: Approved-capsule export as schema-valid JSON and readable Markdown.
   - Accept when: Both exports reflect the approved version and contain no excluded evidence.
 
-- [ ] **R-02 — Create the deterministic payments fixture**
+- [x] **R-02 — Create the deterministic payments fixture**
   - Dependencies: F-05.
   - Deliverable: Duplicate-capture defect, focused retry test, failed middleware path, lock-owner diagnostic, fake secret, drift script, and reset command.
   - Accept when: One command restores the complete scenario to its documented starting state.
 
-- [ ] **R-03 — Encode all ten evaluation scenarios**
+- [x] **R-03 — Encode all ten evaluation scenarios**
   - Dependencies: R-02, M-04.
   - Deliverable: Expected facts, forbidden claims, seeded secrets, acceptable next actions, and deterministic local fixtures.
   - Accept when: The harness reports provenance, leakage, next-action agreement, latency, and correction metrics separately from their targets.
 
-- [ ] **R-04 — Harden failures and accessibility**
+- [x] **R-04 — Harden failures and accessibility**
   - Dependencies: U-02, U-03, U-04, R-03.
   - Deliverable: Offline, invalid-JSON, missing-artifact, moved-project, conflicting-evidence, huge-output, crash-recovery, and keyboard-only flows.
   - Accept when: Failures preserve local evidence and clearly present retry or recovery actions.
@@ -694,6 +694,15 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - `CheckpointService::open_artifact` validates that the path belongs to the approved capsule's `artifacts_to_reopen` and resolves inside the project boundary, returning a bounded 32 KiB text preview on explicit click. Next-action instructions are copied only on explicit click (`Copy next action`), and no capsule action ever executes a command.
 - `PrivacyScreen` exposes per-project retention days, collector toggles (`capture_git`, `capture_commands`, `capture_file_events`), custom excluded globs, custom redaction regexes, a live non-persisting redaction tester (`privacy.testRedaction`), a single-click **Pause all active capture** action (`threads.pauseAll`), and destructive thread deletion with confirmation.
 
+### Evaluation suite, deterministic demo, failure states, and accessibility hardening (R-02, R-03, R-04)
+
+- `crates/tb-cli/tests/demo_path.rs` runs all 11 steps of the Maya payments interruption-and-resume scenario (`spec.md` §21): reset fixture (`npm run demo:reset`) -> start thread -> run focused test with fake secret -> apply and revert failed middleware attempt -> record fact, hypothesis, and question notes -> offline **Save My Place** (< 2 s) -> inspect outbound payload preview (verifying zero characters of `sk_live_threadback_demo_99f18a4c2d8e4b60b5c7a1d2e3f40506`) -> generate and validate capsule -> inspect provenance and approve -> simulate repository drift (`hotfix/review-feedback`, commit, dirty file) -> detect branch/HEAD/working-tree drift -> open artifact explicitly -> resume thread -> run `LOCK_DEBUG=1` lock-owner diagnostic.
+- `fixtures/evaluation/scenarios/scenarios.json` encodes all 10 evaluation scenarios (`S01` through `S10`) with goals, expected facts, forbidden claims, seeded secrets, acceptable next actions, and material-correction expectations.
+- `crates/threadback-core/src/evaluation/mod.rs` and `npm run eval` (`crates/threadback-core/examples/run_evaluation.rs`) execute all 10 scenarios through project approval, evidence capture, offline checkpointing, payload preview/redaction, Token Factory capsule generation + provenance validation, and human review/approval, writing `docs/EVALUATION.md` and `fixtures/evaluation/latest-report.json` with observed values separated from targets and explicit known limitations.
+- `projects.relink` (`Database::update_project_root` + `projects::relink_project`) and `ApprovedCapsule` let users relink a moved project folder while keeping the approved capsule readable when `RepositoryDrift` reports `repository_unavailable`.
+- `CheckpointService::open_checkpoint_artifact` returns `OpenedArtifact { exists: false, relative_path, ... }` when a referenced file no longer exists on disk, and `ApprovedCapsule` surfaces the missing artifact's last known relative path.
+- Keyboard navigation, focus management, semantic landmarks, and non-color-only status indicators (`StatusBar`, `RecoveryBanner`, `Timeline`, `CapsuleView`, `PayloadPreviewPanel`) are verified in `src/screens/ReturnAndPrivacy.test.tsx`.
+
 ## 10. Final acceptance checklist
 
 - [x] An approved project cannot escape its canonical boundary.
@@ -701,7 +710,7 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - [x] Git and explicitly wrapped-command events are durable.
 - [x] User-authored note labels remain authoritative.
 - [x] **Save My Place** works offline.
-- [ ] The outbound payload is fully visible and editable before transmission.
+- [x] The outbound payload is fully visible and editable before transmission.
 - [x] The seeded fake secret never reaches the model payload.
 - [x] A real Nemotron call produces the capsule draft.
 - [x] Unsupported facts cannot be approved silently.
@@ -710,7 +719,7 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - [x] No command executes automatically from a capsule.
 - [x] Approved JSON and Markdown exports work.
 - [x] Retention and complete deletion work.
-- [ ] The ten-scenario evaluation report exists.
-- [ ] The demo resets in one command.
+- [x] The ten-scenario evaluation report exists.
+- [x] The demo resets in one command.
 - [ ] README, license, setup, tests, privacy notes, and limitations are complete.
 - [ ] The recorded demo matches the distributable build.

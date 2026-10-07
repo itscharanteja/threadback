@@ -94,6 +94,25 @@ impl CreateProjectInput {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RelinkProjectInput {
+    pub project_id: ProjectId,
+    pub root_path: String,
+}
+
+impl RelinkProjectInput {
+    pub fn validate(&self) -> Result<(), crate::DomainError> {
+        if self.root_path.trim().is_empty() {
+            return Err(crate::DomainError::invalid_input(
+                "New project folder is required.",
+                "rootPath",
+            ));
+        }
+        Ok(())
+    }
+}
+
 pub const DEFAULT_RETENTION_DAYS: u32 = 14;
 pub const MAX_RETENTION_DAYS: u32 = 365;
 

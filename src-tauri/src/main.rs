@@ -7,6 +7,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::app_status,
             commands::projects_create,
+            commands::projects_relink,
             commands::projects_list,
             commands::projects_default_exclusions,
             commands::projects_get_policy,
