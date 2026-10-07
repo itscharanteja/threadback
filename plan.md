@@ -294,7 +294,7 @@ Every command returns either its declared result or a serializable domain error 
   - Deliverable: Offline, invalid-JSON, missing-artifact, moved-project, conflicting-evidence, huge-output, crash-recovery, and keyboard-only flows.
   - Accept when: Failures preserve local evidence and clearly present retry or recovery actions.
 
-- [ ] **R-05 — Package and document**
+- [x] **R-05 — Package and document**
   - Dependencies: R-01, R-04.
   - Deliverable: macOS development build, setup guide, architecture, privacy model, Nemotron usage, demo instructions, tests, limitations, license, and attribution.
   - Accept when: A clean environment completes setup, demo, tests, and packaging without undocumented steps.
@@ -703,6 +703,12 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - `CheckpointService::open_checkpoint_artifact` returns `OpenedArtifact { exists: false, relative_path, ... }` when a referenced file no longer exists on disk, and `ApprovedCapsule` surfaces the missing artifact's last known relative path.
 - Keyboard navigation, focus management, semantic landmarks, and non-color-only status indicators (`StatusBar`, `RecoveryBanner`, `Timeline`, `CapsuleView`, `PayloadPreviewPanel`) are verified in `src/screens/ReturnAndPrivacy.test.tsx`.
 
+### Packaging, documentation, and release evidence (R-05, R-06)
+
+- `npm run tauri:build` builds the optimized macOS application bundle (`target/release/bundle/macos/ThreadBack.app`) and the release CLI wrapper (`target/release/tb`).
+- `README.md` documents prerequisites, clean-environment setup, architecture, the privacy and security boundary, NVIDIA Nemotron via Nebius Token Factory, the 11-step deterministic demo walkthrough, test and evaluation commands, known limitations, MIT license, and attributions.
+- `docs/EVALUATION.md` and `fixtures/evaluation/latest-report.json` hold the generated 10-scenario evaluation report, and `docs/DEMO_SCRIPT.md` provides the under-three-minute recording script against `ThreadBack.app` and `target/release/tb`.
+
 ## 10. Final acceptance checklist
 
 - [x] An approved project cannot escape its canonical boundary.
@@ -721,5 +727,5 @@ Auto-update, tray polish, idle suggestions, file watching, and open-file conveni
 - [x] Retention and complete deletion work.
 - [x] The ten-scenario evaluation report exists.
 - [x] The demo resets in one command.
-- [ ] README, license, setup, tests, privacy notes, and limitations are complete.
+- [x] README, license, setup, tests, privacy notes, and limitations are complete.
 - [ ] The recorded demo matches the distributable build.

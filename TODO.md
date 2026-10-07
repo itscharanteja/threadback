@@ -141,17 +141,17 @@
 
 **Deliverable:** A clean macOS build, evaluation report, complete documentation, and matching under-three-minute demonstration are ready to share.
 
-- [ ] R-05 Produce the macOS development/distributable build.
-- [ ] R-05 Complete setup, architecture, privacy, Nemotron, demo, test, limitation, license, and attribution documentation.
-- [ ] R-05 Verify installation and setup in a clean environment.
-- [ ] R-06 Generate the final evaluation report.
+- [x] R-05 Produce the macOS development/distributable build.
+- [x] R-05 Complete setup, architecture, privacy, Nemotron, demo, test, limitation, license, and attribution documentation.
+- [x] R-05 Verify installation and setup in a clean environment.
+- [x] R-06 Generate the final evaluation report.
 - [ ] R-06 Record the end-to-end demonstration using the packaged build.
 
 ### Gate G6 — Release
 
-- [ ] All required automated tests pass from a clean checkout.
-- [ ] The demo resets with one documented command.
-- [ ] The packaged application completes the Maya resume scenario.
+- [x] All required automated tests pass from a clean checkout.
+- [x] The demo resets with one documented command.
+- [x] The packaged application completes the Maya resume scenario.
 - [ ] The recorded demonstration matches the distributable build.
 - [ ] Every non-optional item in the final `plan.md` acceptance checklist is complete.
 
