@@ -60,7 +60,10 @@ impl<'a> ThreadService<'a> {
             .find_project_policy(&project.id)
             .unwrap_or_else(|_| crate::ProjectPolicy::default_for(project.id.clone()));
         let payload = if policy.capture_git {
-            Some(snapshot_payload(&project.canonical_root, &policy.exclusions)?)
+            Some(snapshot_payload(
+                &project.canonical_root,
+                &policy.exclusions,
+            )?)
         } else {
             None
         };

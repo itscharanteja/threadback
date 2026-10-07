@@ -83,14 +83,17 @@ impl<'a> ExportService<'a> {
     }
 }
 
-fn write_export(dir: &std::path::Path, filename: &str, content: &str) -> Result<PathBuf, DomainError> {
+fn write_export(
+    dir: &std::path::Path,
+    filename: &str,
+    content: &str,
+) -> Result<PathBuf, DomainError> {
     std::fs::create_dir_all(dir).map_err(|error| {
         DomainError::storage(format!("Could not create export directory: {error}"))
     })?;
     let path = dir.join(filename);
-    std::fs::write(&path, content).map_err(|error| {
-        DomainError::storage(format!("Could not write export file: {error}"))
-    })?;
+    std::fs::write(&path, content)
+        .map_err(|error| DomainError::storage(format!("Could not write export file: {error}")))?;
     Ok(path)
 }
 
@@ -109,7 +112,10 @@ pub fn render_markdown(
     ));
 
     out.push_str("## Next Action\n\n");
-    out.push_str(&format!("**{}**\n\n", capsule.next_action.instruction.trim()));
+    out.push_str(&format!(
+        "**{}**\n\n",
+        capsule.next_action.instruction.trim()
+    ));
     out.push_str(&format!(
         "- **Justification**: {}\n- **Success check**: {}\n- **Sources**: {}\n\n",
         capsule.next_action.justification.trim(),
@@ -225,7 +231,7 @@ mod tests {
     use crate::{
         ApprovalService, Checkpoint, CheckpointId, Confidence, ErrorCode, EventId, EventPayload,
         FailedAttempt, Hypothesis, NextAction, NoteLabel, Project, ProjectId, RelevantArtifact,
-        ResumeCapsule, Sensitivity, SourcedClaim, STATUS_DRAFT, STATUS_GENERATED, ThreadEvent,
+        ResumeCapsule, STATUS_DRAFT, STATUS_GENERATED, Sensitivity, SourcedClaim, ThreadEvent,
         ThreadId, ThreadState, WorkThread,
     };
     use chrono::Utc;

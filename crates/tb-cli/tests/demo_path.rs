@@ -290,8 +290,7 @@ fn the_demo_path_from_failing_test_to_drift() {
         .unwrap();
     assert!(preview.can_generate);
     assert!(
-        !preview.payload_json.contains(FAKE_SECRET)
-            && !preview.payload_json.contains("nbf_demo"),
+        !preview.payload_json.contains(FAKE_SECRET) && !preview.payload_json.contains("nbf_demo"),
         "the outbound payload never contains the seeded secret"
     );
 
@@ -439,7 +438,8 @@ fn the_demo_path_from_failing_test_to_drift() {
         &[("LOCK_DEBUG", "1")],
     );
     assert!(
-        String::from_utf8_lossy(&lock_check.stdout).contains("worker=worker-b backend=lock-backend-2")
+        String::from_utf8_lossy(&lock_check.stdout)
+            .contains("worker=worker-b backend=lock-backend-2")
     );
 }
 

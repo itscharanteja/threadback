@@ -292,7 +292,10 @@ impl Database {
             .ok_or_else(|| DomainError::not_found("That project no longer exists."))
     }
 
-    pub fn find_project_policy(&self, project_id: &ProjectId) -> Result<crate::ProjectPolicy, DomainError> {
+    pub fn find_project_policy(
+        &self,
+        project_id: &ProjectId,
+    ) -> Result<crate::ProjectPolicy, DomainError> {
         if self.find_project(project_id)?.is_none() {
             return Err(DomainError::not_found("That project no longer exists."));
         }
@@ -325,13 +328,17 @@ impl Database {
         Ok(policy.unwrap_or_else(|| crate::ProjectPolicy::default_for(project_id.clone())))
     }
 
-    pub fn upsert_project_policy(&self, policy: &crate::ProjectPolicy) -> Result<crate::ProjectPolicy, DomainError> {
+    pub fn upsert_project_policy(
+        &self,
+        policy: &crate::ProjectPolicy,
+    ) -> Result<crate::ProjectPolicy, DomainError> {
         policy.validate()?;
         if self.find_project(&policy.project_id)?.is_none() {
             return Err(DomainError::not_found("That project no longer exists."));
         }
         let exclusions_json = serde_json::to_string(&policy.exclusions).map_err(json_error)?;
-        let redaction_json = serde_json::to_string(&policy.redaction_patterns).map_err(json_error)?;
+        let redaction_json =
+            serde_json::to_string(&policy.redaction_patterns).map_err(json_error)?;
         self.connection
             .execute(
                 "INSERT INTO project_policies
@@ -1100,7 +1107,9 @@ impl Database {
         })
     }
 
-    fn checkpoint_referenced_event_ids(&self) -> Result<std::collections::HashSet<String>, DomainError> {
+    fn checkpoint_referenced_event_ids(
+        &self,
+    ) -> Result<std::collections::HashSet<String>, DomainError> {
         let mut protected = std::collections::HashSet::new();
         let mut stmt = self
             .connection
@@ -1609,7 +1618,11 @@ mod tests {
 
         let now = Utc::now();
         let old_unreferenced = event(thread.id.clone(), now - Duration::days(20), "old noise");
-        let old_cited = event(thread.id.clone(), now - Duration::days(19), "cited evidence");
+        let old_cited = event(
+            thread.id.clone(),
+            now - Duration::days(19),
+            "cited evidence",
+        );
         let recent_unreferenced = event(thread.id.clone(), now - Duration::days(3), "recent note");
 
         db.insert_event(&old_unreferenced).unwrap();
