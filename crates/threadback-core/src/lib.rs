@@ -35,7 +35,8 @@ pub use domain::*;
 pub use error::{DomainError, ErrorCode};
 pub use evaluation::{
     EvaluationReport, EvaluationSummary, MetricComparison, ScenarioOutcome, ScenarioSpec,
-    load_scenario_specs, render_evaluation_markdown, run_evaluation_suite,
+    WorkflowOutcome, load_scenario_specs, render_evaluation_markdown, run_evaluation_suite,
+    run_workflow_evaluations,
 };
 pub use export::{ExportService, FileResult, render_markdown};
 #[cfg(feature = "model-client")]

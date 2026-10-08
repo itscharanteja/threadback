@@ -1,4 +1,6 @@
-use threadback_core::{load_scenario_specs, render_evaluation_markdown, run_evaluation_suite};
+use threadback_core::{
+    load_scenario_specs, render_evaluation_markdown, run_evaluation_suite, run_workflow_evaluations,
+};
 
 #[test]
 fn all_ten_scenarios_and_day_six_verification_gates_pass() {
@@ -15,6 +17,17 @@ fn all_ten_scenarios_and_day_six_verification_gates_pass() {
             .scenarios
             .iter()
             .filter(|s| !s.passed)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(report.summary.workflows_total, 5);
+    assert_eq!(
+        report.summary.workflows_passed,
+        5,
+        "failed workflows: {:?}",
+        report
+            .workflows
+            .iter()
+            .filter(|w| !w.passed)
             .collect::<Vec<_>>()
     );
 
@@ -64,5 +77,19 @@ fn all_ten_scenarios_and_day_six_verification_gates_pass() {
     let markdown = render_evaluation_markdown(&report);
     assert!(markdown.contains("## 1. Target vs. Observed Metrics"));
     assert!(markdown.contains("## 2. Prepared Scenario Results (S01–S10)"));
-    assert!(markdown.contains("## 3. Known Limitations"));
+    assert!(markdown.contains("## 3. End-to-End Persona Workflow Evaluations (W01–W05)"));
+    assert!(markdown.contains("## 4. Known Limitations"));
+}
+
+#[test]
+fn persona_workflows_w01_through_w05_complete_all_stages_without_secret_leaks() {
+    let workflows = run_workflow_evaluations();
+    assert_eq!(workflows.len(), 5);
+    let ids: Vec<&str> = workflows.iter().map(|w| w.id.as_str()).collect();
+    assert_eq!(ids, vec!["W01", "W02", "W03", "W04", "W05"]);
+    for wf in &workflows {
+        assert!(wf.passed, "workflow {} failed: {}", wf.id, wf.details);
+        assert_eq!(wf.stages_completed, wf.stages_total);
+        assert_eq!(wf.secret_leaks_found, 0);
+    }
 }

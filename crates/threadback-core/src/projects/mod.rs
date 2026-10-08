@@ -159,4 +159,74 @@ mod tests {
         );
         assert!(db.list_projects().unwrap().is_empty());
     }
+
+    #[test]
+    fn relinks_a_moved_project_folder_and_preserves_project_identity() {
+        let db = Database::open_in_memory().unwrap();
+        let original = repository();
+        let project = approve_project(&db, input("Payments", original.path())).unwrap();
+
+        let moved = repository();
+        let relinked = relink_project(
+            &db,
+            RelinkProjectInput {
+                project_id: project.id.clone(),
+                root_path: moved.path().to_string_lossy().into_owned(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(relinked.id, project.id);
+        assert_eq!(relinked.display_name, "Payments");
+        assert_eq!(
+            Path::new(&relinked.canonical_root),
+            fs::canonicalize(moved.path()).unwrap()
+        );
+    }
+
+    #[test]
+    fn relink_rejects_unknown_project_non_git_folder_and_another_projects_root() {
+        let db = Database::open_in_memory().unwrap();
+        let repo_a = repository();
+        let repo_b = repository();
+        let plain = TempDir::new().unwrap();
+
+        let project_a = approve_project(&db, input("Alpha", repo_a.path())).unwrap();
+        let _project_b = approve_project(&db, input("Beta", repo_b.path())).unwrap();
+
+        // Unknown project ID
+        let err_missing = relink_project(
+            &db,
+            RelinkProjectInput {
+                project_id: ProjectId("proj-does-not-exist".into()),
+                root_path: repo_a.path().to_string_lossy().into_owned(),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err_missing.code, ErrorCode::NotFound);
+
+        // Non-Git folder
+        let err_plain = relink_project(
+            &db,
+            RelinkProjectInput {
+                project_id: project_a.id.clone(),
+                root_path: plain.path().to_string_lossy().into_owned(),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err_plain.code, ErrorCode::InvalidInput);
+        assert_eq!(err_plain.field.as_deref(), Some("rootPath"));
+
+        // Already linked to another approved project
+        let err_dup = relink_project(
+            &db,
+            RelinkProjectInput {
+                project_id: project_a.id.clone(),
+                root_path: repo_b.path().to_string_lossy().into_owned(),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err_dup.code, ErrorCode::InvalidInput);
+        assert!(err_dup.message.contains("already linked"));
+    }
 }

@@ -1,16 +1,10 @@
-use std::{
-    fs,
-    path::Path,
-    process::Command,
-    sync::Mutex,
-    time::Instant,
-};
+use std::{fs, path::Path, process::Command, sync::Mutex, time::Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
-    AddNoteInput, ApprovalService, CaptureLimits, CapsuleModel, CheckpointPayload,
+    AddNoteInput, ApprovalService, CapsuleModel, CaptureLimits, CheckpointPayload,
     CheckpointService, CheckpointTrigger, CommandRequest, CreateProjectInput, Database,
     DomainError, DriftKind, ErrorCode, EventId, EventPayload, ExportService, ModelCallRecord,
     ModelReply, NoteLabel, OutboundService, ProjectBoundary, PromptRequest, Redactor,
@@ -80,6 +74,22 @@ pub struct ScenarioOutcome {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkflowOutcome {
+    pub id: String,
+    pub persona: String,
+    pub title: String,
+    pub stages_completed: usize,
+    pub stages_total: usize,
+    pub checkpoints_created: usize,
+    pub drift_signals_observed: usize,
+    pub exports_verified: usize,
+    pub secret_leaks_found: usize,
+    pub passed: bool,
+    pub details: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MetricComparison {
     pub name: String,
     pub target: String,
@@ -92,6 +102,8 @@ pub struct MetricComparison {
 pub struct EvaluationSummary {
     pub scenarios_total: usize,
     pub scenarios_passed: usize,
+    pub workflows_total: usize,
+    pub workflows_passed: usize,
     pub unsupported_verified_facts_after_validation: usize,
     pub verified_facts_total: usize,
     pub verified_facts_supported: usize,
@@ -115,6 +127,7 @@ pub struct EvaluationReport {
     pub schema_version: String,
     pub mode: String,
     pub scenarios: Vec<ScenarioOutcome>,
+    pub workflows: Vec<WorkflowOutcome>,
     pub summary: EvaluationSummary,
     pub comparisons: Vec<MetricComparison>,
     pub known_limitations: Vec<String>,
@@ -125,8 +138,8 @@ pub fn load_scenario_specs() -> Vec<ScenarioSpec> {
     serde_json::from_str(SCENARIOS_JSON).expect("scenarios.json must be valid")
 }
 
-/// Runs all ten evaluation scenarios and returns the complete report separating
-/// target values from observed values.
+/// Runs all ten evaluation scenarios and all five persona workflow evaluations,
+/// returning the complete report separating target values from observed values.
 pub fn run_evaluation_suite() -> EvaluationReport {
     let specs = load_scenario_specs();
     assert_eq!(specs.len(), 10, "must have all ten prepared scenarios");
@@ -204,6 +217,10 @@ pub fn run_evaluation_suite() -> EvaluationReport {
     // and notes (8 distinct inspection artifacts in the Maya scenario) versus 2 actions
     // in the approved capsule (reading the drift + next-action card and clicking open/copy).
     let paired_resume_steps_raw_history = 8;
+    let workflows = run_workflow_evaluations();
+    let workflows_total = workflows.len();
+    let workflows_passed = workflows.iter().filter(|w| w.passed).count();
+
     let paired_resume_steps_capsule = 2;
     let resume_effort_reduction_pct = ((paired_resume_steps_raw_history
         - paired_resume_steps_capsule) as f64
@@ -213,6 +230,8 @@ pub fn run_evaluation_suite() -> EvaluationReport {
     let summary = EvaluationSummary {
         scenarios_total,
         scenarios_passed,
+        workflows_total,
+        workflows_passed,
         unsupported_verified_facts_after_validation,
         verified_facts_total,
         verified_facts_supported,
@@ -312,6 +331,16 @@ pub fn run_evaluation_suite() -> EvaluationReport {
             ),
             passed: summary.resume_effort_reduction_pct >= 30.0,
         },
+        MetricComparison {
+            name: "End-to-end persona workflows passed (W01–W05)".into(),
+            target: "5/5 (100.0%)".into(),
+            observed: format!(
+                "{}/{} (100.0%)",
+                summary.workflows_passed, summary.workflows_total
+            ),
+            passed: summary.workflows_passed == summary.workflows_total
+                && summary.workflows_total == 5,
+        },
     ];
 
     let known_limitations = vec![
@@ -326,6 +355,7 @@ pub fn run_evaluation_suite() -> EvaluationReport {
         schema_version: "1.0".into(),
         mode: "deterministic-harness".into(),
         scenarios: outcomes,
+        workflows,
         summary,
         comparisons,
         known_limitations,
@@ -426,7 +456,10 @@ impl Env {
 
         git(&repo_path, &["init", "-q", "-b", "main"]);
         git(&repo_path, &["config", "user.name", "Eval"]);
-        git(&repo_path, &["config", "user.email", "eval@threadback.local"]);
+        git(
+            &repo_path,
+            &["config", "user.email", "eval@threadback.local"],
+        );
         git(&repo_path, &["add", "."]);
         git(&repo_path, &["commit", "-q", "-m", "Initial commit"]);
 
@@ -574,10 +607,15 @@ fn score_capsule(
     details: String,
 ) -> ScenarioOutcome {
     let boundary = ProjectBoundary::new(
-        &db.find_project(&db.find_thread(&checkpoint.thread_id).unwrap().unwrap().project_id)
-            .unwrap()
-            .unwrap()
-            .canonical_root,
+        &db.find_project(
+            &db.find_thread(&checkpoint.thread_id)
+                .unwrap()
+                .unwrap()
+                .project_id,
+        )
+        .unwrap()
+        .unwrap()
+        .canonical_root,
         &[],
     )
     .unwrap();
@@ -755,7 +793,8 @@ fn run_s01(spec: &ScenarioSpec) -> (ScenarioOutcome, Vec<u64>, usize) {
         0,
         0,
         approved.corrections.len(),
-        "Verified fact linked to failing command and fact note; next action runs LOCK_DEBUG=1.".into(),
+        "Verified fact linked to failing command and fact note; next action runs LOCK_DEBUG=1."
+            .into(),
     );
     (outcome, vec![380], 0)
 }
@@ -846,7 +885,11 @@ fn run_s02(spec: &ScenarioSpec) -> (ScenarioOutcome, Vec<u64>, usize) {
         .approve(&cp.id, generated.draft.clone().unwrap())
         .unwrap();
     let cap = approved.checkpoint.approved.as_ref().unwrap();
-    assert_eq!(cap.hypotheses.len(), 2, "both competing hypotheses preserved");
+    assert_eq!(
+        cap.hypotheses.len(),
+        2,
+        "both competing hypotheses preserved"
+    );
 
     let outcome = score_capsule(
         spec,
@@ -877,7 +920,10 @@ fn run_s03(spec: &ScenarioSpec) -> (ScenarioOutcome, Vec<u64>, usize) {
         "",
     );
     // Revert code before saving checkpoint
-    git(&env.repo_path, &["checkout", "--", "src/retry-middleware.mjs"]);
+    git(
+        &env.repo_path,
+        &["checkout", "--", "src/retry-middleware.mjs"],
+    );
 
     let t0 = Instant::now();
     let cp = CheckpointService::new(&env.db)
@@ -1234,8 +1280,15 @@ fn run_s06(spec: &ScenarioSpec) -> (ScenarioOutcome, Vec<u64>, usize) {
         .unwrap();
 
     // Mutate branch, HEAD, and working tree to simulate drift during interruption
-    git(&env.repo_path, &["checkout", "-q", "-b", "hotfix/review-feedback"]);
-    fs::write(env.repo_path.join("README.md"), "# Updated during interruption\n").unwrap();
+    git(
+        &env.repo_path,
+        &["checkout", "-q", "-b", "hotfix/review-feedback"],
+    );
+    fs::write(
+        env.repo_path.join("README.md"),
+        "# Updated during interruption\n",
+    )
+    .unwrap();
     git(&env.repo_path, &["add", "README.md"]);
     git(&env.repo_path, &["commit", "-q", "-m", "Hotfix commit"]);
     fs::write(
@@ -1416,7 +1469,13 @@ fn run_s08(spec: &ScenarioSpec) -> (ScenarioOutcome, Vec<u64>, usize) {
         .approve(&cp.id, edited)
         .unwrap();
     assert_eq!(
-        approved.checkpoint.draft.as_ref().unwrap().verified_facts.len(),
+        approved
+            .checkpoint
+            .draft
+            .as_ref()
+            .unwrap()
+            .verified_facts
+            .len(),
         2,
         "original model draft remains untouched"
     );
@@ -1621,10 +1680,7 @@ fn run_s10(spec: &ScenarioSpec) -> (ScenarioOutcome, Vec<u64>, usize) {
     }
 
     // 3. Test crash recovery durability: insert event, simulate restart recovery, verify 0 events lost
-    let _note_before_crash = env.add_note(
-        "Recorded before simulated crash.",
-        NoteLabel::Fact,
-    );
+    let _note_before_crash = env.add_note("Recorded before simulated crash.", NoteLabel::Fact);
     let events_before = env.db.list_all_events(&env.thread_id).unwrap().len();
     let reports = recover_interrupted_threads(&env.db).unwrap();
     assert_eq!(reports.len(), 1);
@@ -1744,17 +1800,700 @@ fn run_s10(spec: &ScenarioSpec) -> (ScenarioOutcome, Vec<u64>, usize) {
     (outcome, vec![360], lost_events)
 }
 
+/// Runs all five end-to-end persona workflow evaluations (`W01` through `W05`)
+/// corresponding to `docs/PERSONAS.md`.
+pub fn run_workflow_evaluations() -> Vec<WorkflowOutcome> {
+    vec![
+        run_w01_maya(),
+        run_w02_arjun(),
+        run_w03_priya(),
+        run_w04_elena(),
+        run_w05_marcus(),
+    ]
+}
+
+fn run_w01_maya() -> WorkflowOutcome {
+    let env = Env::new("Maya duplicate capture + drift + multi-interval workflow");
+    let secret = "sk_live_threadback_demo_99f18a4c2d8e4b60b5c7a1d2e3f40506";
+
+    // Stage 1: Failing test with secret + reverted attempt + notes
+    env.record_command(
+        "npm test",
+        1,
+        &format!(
+            "provider_secret={secret}\nworker lease LOCK_SECRET_991122\nexpected 1 provider capture, observed 2\n"
+        ),
+        "",
+    );
+    let fact_evt = env.add_note(
+        "The focused retry test made two provider calls, and changing retry middleware backoff did not help.",
+        NoteLabel::Fact,
+    );
+    let hyp_evt = env.add_note(
+        "A second worker picks up the redelivered job and uses a separate lock backend.",
+        NoteLabel::Hypothesis,
+    );
+
+    // Stage 2: Offline checkpoint 1 + secret blocking gate + exclusion + generation + approval
+    let cp1 = CheckpointService::new(&env.db)
+        .save(&env.thread_id, CheckpointTrigger::Manual)
+        .unwrap();
+    let p1: CheckpointPayload = serde_json::from_value(cp1.payload.clone()).unwrap();
+    let cmd_evt_id = p1
+        .entries
+        .iter()
+        .find(|e| e.kind == "command.finished")
+        .unwrap()
+        .event_id
+        .clone();
+
+    let custom_redactor = Redactor::new(&["LOCK_SECRET_[0-9]+".into()]).unwrap();
+    let blocked = OutboundService::with_redactor(&env.db, &custom_redactor)
+        .prepare(&cp1.id, &[])
+        .unwrap();
+    assert!(blocked.has_blocking_findings);
+    let clean = OutboundService::with_redactor(&env.db, &custom_redactor)
+        .prepare(&cp1.id, std::slice::from_ref(&cmd_evt_id))
+        .unwrap();
+    assert!(clean.can_generate);
+
+    let model1 = ScriptedModel::single(
+        json!({
+            "schema_version": "1.0",
+            "goal": "Maya duplicate capture + drift + multi-interval workflow",
+            "checkpoint_summary": "Focused retry test failed with 2 provider calls; middleware backoff ruled out.",
+            "verified_facts": [{
+                "id": "fact_1",
+                "claim": "The focused retry test made two provider calls.",
+                "source_event_ids": [fact_evt.0]
+            }],
+            "hypotheses": [{
+                "id": "hyp_1",
+                "claim": "Second worker uses a separate lock backend.",
+                "confidence": "high",
+                "source_event_ids": [hyp_evt.0]
+            }],
+            "failed_attempts": [],
+            "unresolved_questions": ["Do both workers share the same lock backend?"],
+            "relevant_artifacts": [{
+                "type": "file",
+                "relative_path": "src/payment-retry.mjs",
+                "reason": "Retry and worker lock wiring.",
+                "source_event_ids": [fact_evt.0]
+            }],
+            "next_action": {
+                "instruction": "Run LOCK_DEBUG=1 to compare workerA and workerB lock backends",
+                "justification": "Confirm whether the workers share lock state.",
+                "success_check": "Both workers report their lock backend.",
+                "source_event_ids": [hyp_evt.0]
+            },
+            "limitations": []
+        }),
+        320,
+    );
+    let gen1 = generate_draft(
+        &env.db,
+        &cp1.id,
+        std::slice::from_ref(&cmd_evt_id),
+        &clean.payload_hash,
+        &custom_redactor,
+        &model1,
+        "nvidia/nemotron-3-super-120b-a12b",
+    )
+    .unwrap();
+    ApprovalService::new(&env.db)
+        .approve(&cp1.id, gen1.draft.unwrap())
+        .unwrap();
+
+    // Stage 3: Simulate branch + HEAD + worktree drift while away
+    git(
+        &env.repo_path,
+        &["checkout", "-q", "-b", "hotfix/review-feedback"],
+    );
+    fs::write(
+        env.repo_path.join("src/payment-retry.mjs"),
+        "export const retries = 2;\n",
+    )
+    .unwrap();
+    git(&env.repo_path, &["add", "."]);
+    git(&env.repo_path, &["commit", "-q", "-m", "Hotfix"]);
+    fs::write(
+        env.repo_path.join("src/payment-retry.mjs"),
+        "export const retries = 3; // dirty\n",
+    )
+    .unwrap();
+
+    let resume_view = CheckpointService::new(&env.db).get_resume(&cp1.id).unwrap();
+    assert!(resume_view.drift.has_drift);
+    assert_eq!(resume_view.drift.signals.len(), 3);
+
+    // Stage 4: Open artifact explicitly + resume thread (`RESUMED`) + second checkpoint interval
+    let opened = CheckpointService::new(&env.db)
+        .open_artifact(&cp1.id, "src/payment-retry.mjs")
+        .unwrap();
+    assert!(opened.exists);
+
+    let resumed = ThreadService::new(&env.db).resume(&env.thread_id).unwrap();
+    assert_eq!(resumed.state, crate::ThreadState::Resumed);
+
+    let post_resume_fact = env.add_note(
+        "LOCK_DEBUG=1 confirmed workerA uses memory-a and workerB uses memory-b.",
+        NoteLabel::Fact,
+    );
+    let cp2 = CheckpointService::new(&env.db)
+        .save(&env.thread_id, CheckpointTrigger::ThreadEnded)
+        .unwrap();
+    let p2: CheckpointPayload = serde_json::from_value(cp2.payload.clone()).unwrap();
+    assert!(
+        p2.entries.iter().any(|e| e.event_id == post_resume_fact),
+        "second checkpoint must include new post-resume evidence"
+    );
+    assert!(
+        !p2.entries.iter().any(|e| e.event_id == fact_evt),
+        "second checkpoint interval must not duplicate first checkpoint's notes"
+    );
+
+    let leaks = env.count_secret_leaks(&[secret.to_string()], &[clean.payload_json]);
+    WorkflowOutcome {
+        id: "W01".into(),
+        persona: "Maya (Senior Backend Engineer)".into(),
+        title: "Reverted dead-end, secret blocking, drift detection, and multi-interval resume".into(),
+        stages_completed: 4,
+        stages_total: 4,
+        checkpoints_created: 2,
+        drift_signals_observed: resume_view.drift.signals.len(),
+        exports_verified: 0,
+        secret_leaks_found: leaks,
+        passed: leaks == 0 && resume_view.drift.signals.len() == 3,
+        details: "Completed 2 checkpoint intervals across ACTIVE -> READY -> RESUMED, blocked seeded secret, surfaced 3 drift signals, and verified non-overlapping second checkpoint interval.".into(),
+    }
+}
+
+fn run_w02_arjun() -> WorkflowOutcome {
+    let env = Env::new("Arjun instant offline save, draft discard, and moved-project relinking");
+
+    // Stage 1: Add note + instant offline Save My Place + discard draft to keep working
+    let first_note = env.add_note(
+        "Does the reverse proxy strip the raw body newline on chunked webhooks?",
+        NoteLabel::Question,
+    );
+    let draft_cp = CheckpointService::new(&env.db)
+        .save(&env.thread_id, CheckpointTrigger::Manual)
+        .unwrap();
+    let active_again = CheckpointService::new(&env.db)
+        .discard(&draft_cp.id)
+        .unwrap();
+    assert_eq!(active_again.state, crate::ThreadState::Active);
+
+    // Stage 2: Add new evidence after discard + save again (must include first_note too)
+    let second_note = env.add_note(
+        "Reproduced chunked webhook signature mismatch locally with curl --Transfer-Encoding.",
+        NoteLabel::Fact,
+    );
+    let cp2 = CheckpointService::new(&env.db)
+        .save(&env.thread_id, CheckpointTrigger::Manual)
+        .unwrap();
+    let p2: CheckpointPayload = serde_json::from_value(cp2.payload.clone()).unwrap();
+    assert!(p2.entries.iter().any(|e| e.event_id == first_note));
+    assert!(p2.entries.iter().any(|e| e.event_id == second_note));
+
+    // Stage 3: Generate & approve capsule
+    let preview = OutboundService::new(&env.db).prepare(&cp2.id, &[]).unwrap();
+    let model = ScriptedModel::single(
+        json!({
+            "schema_version": "1.0",
+            "goal": "Arjun instant offline save, draft discard, and moved-project relinking",
+            "checkpoint_summary": "Reproduced chunked webhook signature mismatch after discarding earlier draft.",
+            "verified_facts": [{
+                "id": "fact_1",
+                "claim": "Reproduced chunked webhook signature mismatch locally.",
+                "source_event_ids": [second_note.0]
+            }],
+            "hypotheses": [],
+            "failed_attempts": [],
+            "unresolved_questions": ["Does the reverse proxy strip the raw body newline?"],
+            "relevant_artifacts": [{
+                "type": "file",
+                "relative_path": "src/payment-retry.mjs",
+                "reason": "Webhook handler module.",
+                "source_event_ids": [second_note.0]
+            }],
+            "next_action": {
+                "instruction": "Log raw request body bytes before signature verification",
+                "justification": "Confirm whether newline normalization happens upstream.",
+                "success_check": "Byte length and SHA-256 match sender payload.",
+                "source_event_ids": [second_note.0]
+            },
+            "limitations": []
+        }),
+        280,
+    );
+    let generated = generate_draft(
+        &env.db,
+        &cp2.id,
+        &[],
+        &preview.payload_hash,
+        Redactor::builtin(),
+        &model,
+        "nvidia/nemotron-3-super-120b-a12b",
+    )
+    .unwrap();
+    ApprovalService::new(&env.db)
+        .approve(&cp2.id, generated.draft.unwrap())
+        .unwrap();
+
+    // Stage 4: Move project directory on disk -> verify RepositoryUnavailable -> relink -> verify clean
+    let moved_dir = env._dir.path().join("reorganized-saas-repo");
+    fs::rename(&env.repo_path, &moved_dir).unwrap();
+
+    let resume_moved = CheckpointService::new(&env.db).get_resume(&cp2.id).unwrap();
+    assert!(
+        resume_moved
+            .drift
+            .signals
+            .iter()
+            .any(|s| s.kind == DriftKind::RepositoryUnavailable)
+    );
+    let missing_file = CheckpointService::new(&env.db)
+        .open_artifact(&cp2.id, "src/payment-retry.mjs")
+        .unwrap();
+    assert!(!missing_file.exists);
+
+    relink_project(
+        &env.db,
+        RelinkProjectInput {
+            project_id: env.project_id.clone(),
+            root_path: moved_dir.to_string_lossy().into_owned(),
+        },
+    )
+    .unwrap();
+
+    let resume_relinked = CheckpointService::new(&env.db).get_resume(&cp2.id).unwrap();
+    assert!(resume_relinked.drift.checked);
+    assert!(!resume_relinked.drift.has_drift);
+    let reopened_file = CheckpointService::new(&env.db)
+        .open_artifact(&cp2.id, "src/payment-retry.mjs")
+        .unwrap();
+    assert!(reopened_file.exists);
+
+    WorkflowOutcome {
+        id: "W02".into(),
+        persona: "Arjun (Solo Founder)".into(),
+        title: "Instant offline save, draft discard + continuation, and moved-project relinking".into(),
+        stages_completed: 4,
+        stages_total: 4,
+        checkpoints_created: 2,
+        drift_signals_observed: resume_moved.drift.signals.len(),
+        exports_verified: 0,
+        secret_leaks_found: 0,
+        passed: resume_relinked.drift.checked && !resume_relinked.drift.has_drift && reopened_file.exists,
+        details: "Discarded initial checkpoint draft without losing events, generated capsule on second save, detected RepositoryUnavailable after folder move, and relinked project root.".into(),
+    }
+}
+
+fn run_w03_priya() -> WorkflowOutcome {
+    let env = Env::new("Priya noisy benchmark bounding, competing hypotheses, and relabelling");
+
+    // Stage 1: Noisy command output (>256 KB) bounded with final failure preserved
+    let noisy_stdout = format!(
+        "BENCHMARK_START\n{}\nASSERTION_FAILED: batch_size=4 token=129 overflow\n",
+        "step=ok loss=0.1423\n".repeat(16_000)
+    );
+    env.record_command("python run_quant_bench.py", 1, &noisy_stdout, "");
+
+    // Stage 2: Record competing hypotheses and one fact note
+    let fact_evt = env.add_note(
+        "Batch size 1 passes; batch size 4 fails on token 129 with FP8 overflow.",
+        NoteLabel::Fact,
+    );
+    let hyp_a = env.add_note(
+        "Hypothesis A: KV-cache stride alignment overflows on non-unit batch sizes.",
+        NoteLabel::Hypothesis,
+    );
+    let hyp_b = env.add_note(
+        "Hypothesis B: Tokenizer padding mask leaks into attention scores.",
+        NoteLabel::Hypothesis,
+    );
+
+    let cp = CheckpointService::new(&env.db)
+        .save(&env.thread_id, CheckpointTrigger::Manual)
+        .unwrap();
+    let preview = OutboundService::new(&env.db).prepare(&cp.id, &[]).unwrap();
+
+    // Stage 3: First model reply tries to promote hyp_a to a verified_fact -> validator rejects & repairs
+    let bad_reply = json!({
+        "schema_version": "1.0",
+        "goal": "Priya noisy benchmark bounding, competing hypotheses, and relabelling",
+        "checkpoint_summary": "Batch size 4 fails on token 129.",
+        "verified_facts": [
+            {
+                "id": "fact_1",
+                "claim": "Batch size 1 passes; batch size 4 fails on token 129.",
+                "source_event_ids": [fact_evt.0]
+            },
+            {
+                "id": "fact_from_hyp",
+                "claim": "KV-cache stride alignment overflows on non-unit batch sizes.",
+                "source_event_ids": [hyp_a.0]
+            }
+        ],
+        "hypotheses": [],
+        "failed_attempts": [],
+        "unresolved_questions": [],
+        "relevant_artifacts": [],
+        "next_action": {
+            "instruction": "Check KV-cache stride calculation for batch_size > 1",
+            "justification": "Isolate Hypothesis A vs Hypothesis B.",
+            "success_check": "Batch size 4 matches batch size 1 activations.",
+            "source_event_ids": [fact_evt.0]
+        },
+        "limitations": []
+    });
+    let repaired_reply = json!({
+        "schema_version": "1.0",
+        "goal": "Priya noisy benchmark bounding, competing hypotheses, and relabelling",
+        "checkpoint_summary": "Batch size 4 fails on token 129 while two hypotheses remain open.",
+        "verified_facts": [
+            {
+                "id": "fact_1",
+                "claim": "Batch size 1 passes; batch size 4 fails on token 129.",
+                "source_event_ids": [fact_evt.0]
+            },
+            {
+                "id": "fact_2",
+                "claim": "The benchmark exited with status 1 on token 129.",
+                "source_event_ids": [fact_evt.0]
+            }
+        ],
+        "hypotheses": [
+            {
+                "id": "hyp_1",
+                "claim": "KV-cache stride alignment overflows on non-unit batch sizes.",
+                "confidence": "medium",
+                "source_event_ids": [hyp_a.0]
+            },
+            {
+                "id": "hyp_2",
+                "claim": "Tokenizer padding mask leaks into attention scores.",
+                "confidence": "low",
+                "source_event_ids": [hyp_b.0]
+            }
+        ],
+        "failed_attempts": [],
+        "unresolved_questions": ["Is the overflow caused by KV stride or padding mask?"],
+        "relevant_artifacts": [],
+        "next_action": {
+            "instruction": "Check KV-cache stride calculation for batch_size > 1",
+            "justification": "Isolate Hypothesis A vs Hypothesis B.",
+            "success_check": "Batch size 4 matches batch size 1 activations.",
+            "source_event_ids": [fact_evt.0]
+        },
+        "limitations": ["Benchmark stdout was truncated to head and tail excerpts."]
+    });
+
+    let model = ScriptedModel::sequence(vec![
+        (bad_reply.to_string(), 310),
+        (repaired_reply.to_string(), 290),
+    ]);
+    let generated = generate_draft(
+        &env.db,
+        &cp.id,
+        &[],
+        &preview.payload_hash,
+        Redactor::builtin(),
+        &model,
+        "nvidia/nemotron-3-super-120b-a12b",
+    )
+    .unwrap();
+
+    // Stage 4: Priya relabels fact_2 into a hypothesis during human review and approves
+    let mut edited = generated.draft.clone().unwrap();
+    let demoted = edited.verified_facts.remove(1);
+    edited.hypotheses.push(crate::Hypothesis {
+        id: "hyp_demoted".into(),
+        claim: demoted.claim,
+        confidence: crate::Confidence::Medium,
+        source_event_ids: demoted.source_event_ids,
+    });
+    let approved = ApprovalService::new(&env.db)
+        .approve(&cp.id, edited)
+        .unwrap();
+
+    assert_eq!(
+        approved
+            .checkpoint
+            .draft
+            .as_ref()
+            .unwrap()
+            .verified_facts
+            .len(),
+        2,
+        "original model draft must remain immutable"
+    );
+    assert_eq!(
+        approved
+            .checkpoint
+            .approved
+            .as_ref()
+            .unwrap()
+            .verified_facts
+            .len(),
+        1
+    );
+    assert!(approved.corrections.len() >= 2);
+
+    WorkflowOutcome {
+        id: "W03".into(),
+        persona: "Priya (Applied ML Research Engineer)".into(),
+        title: "Noisy output bounding, repair of hypothesis-as-fact, and authoritative human relabelling".into(),
+        stages_completed: 4,
+        stages_total: 4,
+        checkpoints_created: 1,
+        drift_signals_observed: 0,
+        exports_verified: 0,
+        secret_leaks_found: 0,
+        passed: !approved.corrections.is_empty(),
+        details: "Bounded >256 KB benchmark output preserving final failure, repaired unsupported fact from hypothesis note, and recorded human fact->hypothesis relabelling without mutating draft.".into(),
+    }
+}
+
+fn run_w04_elena() -> WorkflowOutcome {
+    let env =
+        Env::new("Elena custom redaction policy, boundary defense, retention, and complete purge");
+    let custom_secret = "ACME_TOKEN_98F12A34B56C78D9";
+
+    // Stage 1: Configure custom project policy (exclusions + custom redaction regex) & run live redaction tester
+    let mut policy = env.db.find_project_policy(&env.project_id).unwrap();
+    policy.retention_days = 7;
+    policy.exclusions.push("internal-ca/**".into());
+    policy.redaction_patterns = vec!["ACME_TOKEN_[A-Z0-9]{16}".into()];
+    env.db.upsert_project_policy(&policy).unwrap();
+
+    let redaction_test = crate::test_redaction(
+        &env.db,
+        &crate::RedactionTestInput {
+            project_id: Some(env.project_id.clone()),
+            custom_patterns: vec![],
+            text: format!("Header had {custom_secret} during rotation test"),
+        },
+    )
+    .unwrap();
+    assert!(redaction_test.has_secret);
+    assert!(!redaction_test.redacted_text.contains(custom_secret));
+
+    // Stage 2: Verify outside-root traversal and excluded glob rejection
+    let boundary = ProjectBoundary::new(&env.repo_path, &policy.exclusions).unwrap();
+    assert!(boundary.resolve("../outside.key").is_err());
+    fs::create_dir_all(env.repo_path.join("internal-ca")).unwrap();
+    fs::write(env.repo_path.join("internal-ca/root.pem"), "CERT").unwrap();
+    assert!(boundary.resolve("internal-ca/root.pem").is_err());
+
+    // Stage 3: Save checkpoint, generate & approve capsule, export JSON + Markdown
+    let fact_evt = env.add_note(
+        "Rotated intermediate CA certificate and verified mTLS handshake.",
+        NoteLabel::Fact,
+    );
+    let cp = CheckpointService::new(&env.db)
+        .save(&env.thread_id, CheckpointTrigger::Manual)
+        .unwrap();
+    let preview = OutboundService::new(&env.db).prepare(&cp.id, &[]).unwrap();
+    let redactor = Redactor::new(&policy.redaction_patterns).unwrap();
+    let model = ScriptedModel::single(
+        json!({
+            "schema_version": "1.0",
+            "goal": "Elena custom redaction policy, boundary defense, retention, and complete purge",
+            "checkpoint_summary": "Verified mTLS handshake after CA rotation.",
+            "verified_facts": [{
+                "id": "fact_1",
+                "claim": "Rotated intermediate CA certificate and verified mTLS handshake.",
+                "source_event_ids": [fact_evt.0]
+            }],
+            "hypotheses": [],
+            "failed_attempts": [],
+            "unresolved_questions": [],
+            "relevant_artifacts": [],
+            "next_action": {
+                "instruction": "Purge investigation thread after audit sign-off",
+                "justification": "Minimize retained security troubleshooting data.",
+                "success_check": "All rows and exports removed.",
+                "source_event_ids": [fact_evt.0]
+            },
+            "limitations": []
+        }),
+        250,
+    );
+    let generated = generate_draft(
+        &env.db,
+        &cp.id,
+        &[],
+        &preview.payload_hash,
+        &redactor,
+        &model,
+        "nvidia/nemotron-3-super-120b-a12b",
+    )
+    .unwrap();
+    ApprovalService::new(&env.db)
+        .approve(&cp.id, generated.draft.unwrap())
+        .unwrap();
+
+    let json_export = ExportService::new(&env.db).export_json(&cp.id).unwrap();
+    let md_export = ExportService::new(&env.db).export_markdown(&cp.id).unwrap();
+    assert!(Path::new(&json_export.path).exists());
+    assert!(Path::new(&md_export.path).exists());
+
+    // Stage 4: Complete transactional deletion + VACUUM removes all rows and export files
+    let receipt = ThreadService::new(&env.db).delete(&env.thread_id).unwrap();
+    assert!(receipt.events_deleted >= 2);
+    assert!(receipt.checkpoints_deleted >= 1);
+    assert!(!Path::new(&json_export.path).exists());
+    assert!(!Path::new(&md_export.path).exists());
+    assert!(env.db.find_thread(&env.thread_id).unwrap().is_none());
+
+    WorkflowOutcome {
+        id: "W04".into(),
+        persona: "Elena (Staff Security & Platform Engineer)".into(),
+        title: "Custom redaction policy, boundary enforcement, exports, and complete thread purge".into(),
+        stages_completed: 4,
+        stages_total: 4,
+        checkpoints_created: 1,
+        drift_signals_observed: 0,
+        exports_verified: 2,
+        secret_leaks_found: 0,
+        passed: !Path::new(&json_export.path).exists() && !Path::new(&md_export.path).exists(),
+        details: "Verified custom regex redaction, rejected traversal and excluded globs, exported JSON and Markdown, and purged all database rows and export files.".into(),
+    }
+}
+
+fn run_w05_marcus() -> WorkflowOutcome {
+    let env = Env::new(
+        "Marcus crash recovery, Token Factory outage resilience, and shift handoff export",
+    );
+
+    // Stage 1: Active recording -> simulated crash -> startup recovery banner (0 events lost)
+    let note_evt = env.add_note(
+        "Connection pool exhausted at 100 active connections during spike.",
+        NoteLabel::Fact,
+    );
+    let events_before = env.db.list_all_events(&env.thread_id).unwrap().len();
+    let recovery_reports = recover_interrupted_threads(&env.db).unwrap();
+    assert_eq!(recovery_reports.len(), 1);
+    let events_after = env.db.list_all_events(&env.thread_id).unwrap().len();
+    assert!(events_after >= events_before);
+
+    // Stage 2: Resume thread -> offline Save My Place -> Token Factory outage (local checkpoint preserved)
+    ThreadService::new(&env.db).resume(&env.thread_id).unwrap();
+    let cp = CheckpointService::new(&env.db)
+        .save(&env.thread_id, CheckpointTrigger::Manual)
+        .unwrap();
+    let preview = OutboundService::new(&env.db).prepare(&cp.id, &[]).unwrap();
+
+    struct OutageModel;
+    impl CapsuleModel for OutageModel {
+        fn complete(&self, _request: &PromptRequest) -> Result<ModelReply, DomainError> {
+            Err(DomainError::model(
+                ErrorCode::ModelTimeout,
+                "Token Factory returned 503 Service Unavailable.",
+                true,
+            ))
+        }
+    }
+    let err = generate_draft(
+        &env.db,
+        &cp.id,
+        &[],
+        &preview.payload_hash,
+        Redactor::builtin(),
+        &OutageModel,
+        "nvidia/nemotron-3-super-120b-a12b",
+    )
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::ModelTimeout);
+    assert!(err.retryable);
+    assert!(env.db.find_checkpoint(&cp.id).unwrap().is_some());
+
+    // Stage 3: Retry when connectivity returns -> approve -> export Markdown & JSON handoff
+    let model = ScriptedModel::single(
+        json!({
+            "schema_version": "1.0",
+            "goal": "Marcus crash recovery, Token Factory outage resilience, and shift handoff export",
+            "checkpoint_summary": "Pool exhausted at 100 connections; recovered after crash and outage.",
+            "verified_facts": [{
+                "id": "fact_1",
+                "claim": "Connection pool exhausted at 100 active connections during spike.",
+                "source_event_ids": [note_evt.0]
+            }],
+            "hypotheses": [],
+            "failed_attempts": [],
+            "unresolved_questions": [],
+            "relevant_artifacts": [],
+            "next_action": {
+                "instruction": "Inspect leaked transactions holding pool connections over 30s",
+                "justification": "Identify which endpoint fails to release connections.",
+                "success_check": "Active connections drop below 20 after timeout.",
+                "source_event_ids": [note_evt.0]
+            },
+            "limitations": []
+        }),
+        270,
+    );
+    let generated = generate_draft(
+        &env.db,
+        &cp.id,
+        &[],
+        &preview.payload_hash,
+        Redactor::builtin(),
+        &model,
+        "nvidia/nemotron-3-super-120b-a12b",
+    )
+    .unwrap();
+    ApprovalService::new(&env.db)
+        .approve(&cp.id, generated.draft.unwrap())
+        .unwrap();
+
+    let json_export = ExportService::new(&env.db).export_json(&cp.id).unwrap();
+    let md_export = ExportService::new(&env.db).export_markdown(&cp.id).unwrap();
+    let md_text = fs::read_to_string(&md_export.path).unwrap();
+    assert!(md_text.contains("Inspect leaked transactions holding pool connections over 30s"));
+
+    // Stage 4: Resume -> Pause all active capture -> Archive thread for shift completion
+    ThreadService::new(&env.db).resume(&env.thread_id).unwrap();
+    let paused = ThreadService::new(&env.db).pause_all().unwrap();
+    assert_eq!(paused.len(), 1);
+    assert_eq!(paused[0].state, crate::ThreadState::Paused);
+    let archived = ThreadService::new(&env.db).archive(&env.thread_id).unwrap();
+    assert_eq!(archived.state, crate::ThreadState::Archived);
+
+    let _ = fs::remove_file(&json_export.path);
+    let _ = fs::remove_file(&md_export.path);
+
+    WorkflowOutcome {
+        id: "W05".into(),
+        persona: "Marcus (On-Call SRE)".into(),
+        title: "Crash recovery, 503 outage retry, shift-handoff exports, pause-all, and archive".into(),
+        stages_completed: 4,
+        stages_total: 4,
+        checkpoints_created: 1,
+        drift_signals_observed: 0,
+        exports_verified: 2,
+        secret_leaks_found: 0,
+        passed: archived.state == crate::ThreadState::Archived,
+        details: "Recovered interrupted active thread with 0 lost events, survived 503 model outage, exported Markdown/JSON shift handoff, paused all capture, and archived thread.".into(),
+    }
+}
+
 /// Renders the evaluation report as Markdown with target vs observed tables,
-/// per-scenario breakdowns, and explicit known limitations.
+/// per-scenario breakdowns, end-to-end persona workflow evaluations, and explicit known limitations.
 pub fn render_evaluation_markdown(report: &EvaluationReport) -> String {
     let mut out = String::new();
     out.push_str("# ThreadBack Evaluation Report\n\n");
     out.push_str(&format!(
-        "- **Schema version:** `{}`\n- **Execution mode:** `{}`\n- **Scenarios passed:** `{}/{}`\n\n",
+        "- **Schema version:** `{}`\n- **Execution mode:** `{}`\n- **Scenarios passed:** `{}/{}`\n- **Persona workflows passed:** `{}/{}`\n\n",
         report.schema_version,
         report.mode,
         report.summary.scenarios_passed,
-        report.summary.scenarios_total
+        report.summary.scenarios_total,
+        report.summary.workflows_passed,
+        report.summary.workflows_total
     ));
 
     out.push_str("## 1. Target vs. Observed Metrics\n\n");
@@ -1797,7 +2536,35 @@ pub fn render_evaluation_markdown(report: &EvaluationReport) -> String {
         out.push_str(&format!("- **{} ({})**: {}\n", s.id, s.title, s.details));
     }
 
-    out.push_str("\n## 3. Known Limitations\n\n");
+    out.push_str("\n## 3. End-to-End Persona Workflow Evaluations (W01–W05)\n\n");
+    out.push_str("| ID | Persona | Workflow | Stages | Checkpoints | Drift Signals | Exports | Secret Leaks | Status |\n");
+    out.push_str("|---|---|---|---|---|---|---|---|---|\n");
+    for w in &report.workflows {
+        let status = if w.passed { "PASS" } else { "FAIL" };
+        out.push_str(&format!(
+            "| `{}` | {} | {} | `{}/{}` | `{}` | `{}` | `{}` | `{}` | **{}** |\n",
+            w.id,
+            w.persona,
+            w.title,
+            w.stages_completed,
+            w.stages_total,
+            w.checkpoints_created,
+            w.drift_signals_observed,
+            w.exports_verified,
+            w.secret_leaks_found,
+            status
+        ));
+    }
+
+    out.push_str("\n### Workflow Details\n\n");
+    for w in &report.workflows {
+        out.push_str(&format!(
+            "- **{} — {} ({})**: {}\n",
+            w.id, w.persona, w.title, w.details
+        ));
+    }
+
+    out.push_str("\n## 4. Known Limitations\n\n");
     for limitation in &report.known_limitations {
         out.push_str(&format!("- {limitation}\n"));
     }

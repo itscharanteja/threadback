@@ -16,12 +16,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::write(&json_path, serde_json::to_string_pretty(&report)?)?;
 
     println!(
-        "Evaluation complete: {}/{} scenarios passed.",
-        report.summary.scenarios_passed, report.summary.scenarios_total
+        "Evaluation complete: {}/{} scenarios passed, {}/{} persona workflows passed.",
+        report.summary.scenarios_passed,
+        report.summary.scenarios_total,
+        report.summary.workflows_passed,
+        report.summary.workflows_total
     );
     println!("Wrote {} and {}", md_path.display(), json_path.display());
 
     if report.summary.scenarios_passed != report.summary.scenarios_total
+        || report.summary.workflows_passed != report.summary.workflows_total
         || report.comparisons.iter().any(|c| !c.passed)
     {
         return Err("One or more evaluation gates failed.".into());

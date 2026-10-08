@@ -269,14 +269,13 @@ fn compute_drift(
 
 fn extract_checkpoint_snapshot(
     database: &Database,
-    thread_id: & crate::ThreadId,
+    thread_id: &crate::ThreadId,
     checkpoint: &Checkpoint,
 ) -> Result<Option<GitSnapshot>, DomainError> {
     if let Ok(payload) = serde_json::from_value::<CheckpointPayload>(checkpoint.payload.clone()) {
         for entry in payload.entries.iter().rev() {
             if entry.kind == "git.snapshot" {
-                if let Ok(snapshot) = serde_json::from_value::<GitSnapshot>(entry.content.clone())
-                {
+                if let Ok(snapshot) = serde_json::from_value::<GitSnapshot>(entry.content.clone()) {
                     return Ok(Some(snapshot));
                 }
             }
@@ -387,7 +386,12 @@ mod tests {
     use super::*;
     use crate::{ChangedPath, DiffStats};
 
-    fn sample_snapshot(branch: Option<&str>, head: Option<&str>, dirty: bool, paths: &[&str]) -> GitSnapshot {
+    fn sample_snapshot(
+        branch: Option<&str>,
+        head: Option<&str>,
+        dirty: bool,
+        paths: &[&str],
+    ) -> GitSnapshot {
         GitSnapshot {
             branch: branch.map(str::to_owned),
             head: head.map(str::to_owned),
@@ -433,5 +437,22 @@ mod tests {
         assert!(signals[1].label.contains("9999999"));
         assert_eq!(signals[2].kind, DriftKind::WorkingTreeChanged);
         assert!(signals[2].label.contains("src/retry.rs"));
+    }
+
+    #[test]
+    fn formats_detached_head_and_more_than_three_changed_files_in_drift_signals() {
+        let before = sample_snapshot(None, Some("aaaaaaa111111"), false, &[]);
+        let after = sample_snapshot(
+            Some("main"),
+            Some("aaaaaaa111111"),
+            true,
+            &["a.rs", "b.rs", "c.rs", "d.rs", "e.rs"],
+        );
+        let signals = compare_snapshots(&before, &after);
+        assert_eq!(signals.len(), 2);
+        assert_eq!(signals[0].kind, DriftKind::BranchChanged);
+        assert_eq!(signals[0].before.as_deref(), Some("detached HEAD"));
+        assert_eq!(signals[1].kind, DriftKind::WorkingTreeChanged);
+        assert!(signals[1].after.as_deref().unwrap().contains("+2 more"));
     }
 }
