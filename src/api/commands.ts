@@ -217,3 +217,15 @@ export const configuration = {
     return invoke<ConnectionTestResult>("configuration_test", { input });
   },
 };
+
+export const popover = {
+  close(): Promise<void> {
+    return invoke<void>("popover_close");
+  },
+  setStatus(status: "working" | "saved" | "attention" | "idle"): Promise<void> {
+    return invoke<void>("popover_set_status", { status });
+  },
+  quit(): Promise<void> {
+    return invoke<void>("app_quit");
+  },
+};

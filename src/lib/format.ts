@@ -20,6 +20,26 @@ export function formatTime(iso: string): string {
   });
 }
 
+export function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+export function formatClockTime(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 export const NOTE_LABELS: Record<NoteLabel, string> = {
   fact: "Fact",
   hypothesis: "Hypothesis",

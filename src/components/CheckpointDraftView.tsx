@@ -63,7 +63,7 @@ export const CheckpointDraftView = forwardRef<HTMLHeadingElement, CheckpointDraf
           </div>
         </dl>
 
-        <Timeline items={entryItems(payload.entries)} label="Checkpoint evidence, oldest first" />
+        <Timeline items={entryItems(payload.entries)} label="Checkpoint evidence, latest first" />
 
         <p className="hint">
           {generated

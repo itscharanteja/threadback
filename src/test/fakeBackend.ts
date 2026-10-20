@@ -523,6 +523,51 @@ export class FakeBackend {
         return [];
       case "projects_list":
         return this.projectsList;
+      case "projects_create": {
+        const { displayName, rootPath } = args.input;
+        if (!String(displayName ?? "").trim()) {
+          throw failure("INVALID_INPUT", "Give the project a name.", "displayName");
+        }
+        if (!String(rootPath ?? "").trim()) {
+          throw failure("INVALID_INPUT", "Choose the project folder first.", "rootPath");
+        }
+        const created = {
+          id: `project-${this.projectsList.length + 1}`,
+          displayName: String(displayName).trim(),
+          canonicalRoot: String(rootPath).trim(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        this.projectsList.push(created);
+        return created;
+      }
+      case "threads_start": {
+        const { projectId, title, goal, hypothesis } = args.input;
+        if (!String(title ?? "").trim()) {
+          throw failure("INVALID_INPUT", "Give the thread a title.", "title");
+        }
+        if (!String(goal ?? "").trim()) {
+          throw failure("INVALID_INPUT", "Describe the outcome you are working toward.", "goal");
+        }
+        const now = new Date().toISOString();
+        this.thread = {
+          id: `thread-${this.counter + 1}`,
+          projectId: String(projectId),
+          title: String(title).trim(),
+          goal: String(goal).trim(),
+          state: "ACTIVE",
+          startedAt: now,
+          endedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        this.events = [];
+        this.add({
+          type: "thread_started",
+          payload: { goal: this.thread.goal, hypothesis: hypothesis ? String(hypothesis) : null },
+        });
+        return this.thread;
+      }
       case "projects_relink": {
         const { projectId, rootPath } = args.input;
         if (!String(rootPath ?? "").trim()) {
@@ -582,6 +627,12 @@ export class FakeBackend {
       }
       case "privacy_expire_events":
         return { rawEventsExpired: 0 };
+      case "popover_close":
+        return null;
+      case "popover_set_status":
+        return null;
+      case "app_quit":
+        return null;
       default:
         throw new Error(`Unexpected command ${command}`);
     }

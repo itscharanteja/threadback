@@ -90,3 +90,75 @@ describe("Timeline command output", () => {
     expect(screen.getByText(/Credential redacted/)).toBeInTheDocument();
   });
 });
+
+describe("Timeline date organization and time highlighting", () => {
+  it("places dates on the left side and highlights recorded times", () => {
+    const e1: ThreadEvent = {
+      id: "ev1",
+      threadId: "t1",
+      timestamp: "2026-10-08T09:30:00Z",
+      sensitivity: "normal",
+      contentHash: "h1",
+      payload: { type: "note_added", payload: { text: "First observation", label: "fact" } },
+    };
+    const e2: ThreadEvent = {
+      id: "ev2",
+      threadId: "t1",
+      timestamp: "2026-10-08T09:35:00Z",
+      sensitivity: "normal",
+      contentHash: "h2",
+      payload: { type: "note_added", payload: { text: "Second observation", label: "hypothesis" } },
+    };
+
+    const { container } = render(<Timeline items={eventItems([e1, e2])} />);
+
+    // Respective date is rendered in the left date badge
+    const dateLabels = container.querySelectorAll(".timeline-date-label");
+    expect(dateLabels).toHaveLength(1);
+    expect(container.querySelector(".timeline-date-sub")).toHaveTextContent("2 events");
+
+    // Both items are stacked under this date, reversed (latest record first, older last)
+    const items = container.querySelectorAll(".timeline-item");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent("Second observation");
+    expect(items[1]).toHaveTextContent("First observation");
+
+    // Times are highlighted with timeline-time-highlight badge
+    const timeBadges = container.querySelectorAll(".timeline-time-highlight");
+    expect(timeBadges).toHaveLength(2);
+    for (const badge of timeBadges) {
+      expect(badge).toHaveClass("timeline-time-highlight");
+    }
+  });
+
+  it("stacks items across multiple dates in reverse order with the latest date first", () => {
+    const day1: ThreadEvent = {
+      id: "d1",
+      threadId: "t1",
+      timestamp: "2026-10-08T10:00:00Z",
+      sensitivity: "normal",
+      contentHash: "h1",
+      payload: { type: "note_added", payload: { text: "Day 1 note", label: "fact" } },
+    };
+    const day2: ThreadEvent = {
+      id: "d2",
+      threadId: "t1",
+      timestamp: "2026-10-09T14:00:00Z",
+      sensitivity: "normal",
+      contentHash: "h2",
+      payload: { type: "note_added", payload: { text: "Day 2 note", label: "question" } },
+    };
+
+    const { container } = render(<Timeline items={eventItems([day1, day2])} />);
+
+    // Latest date (day2) comes first, older date (day1) comes last
+    const groups = container.querySelectorAll(".timeline-date-group");
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toHaveTextContent("Day 2 note");
+    expect(groups[1]).toHaveTextContent("Day 1 note");
+
+    const dateLabels = container.querySelectorAll(".timeline-date-label");
+    expect(dateLabels).toHaveLength(2);
+    expect(dateLabels[0].textContent).not.toEqual(dateLabels[1].textContent);
+  });
+});

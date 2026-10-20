@@ -155,7 +155,7 @@ describe("Save My Place", () => {
     await user.click(button("Save My Place"));
 
     const heading = await screen.findByRole("heading", { name: "Checkpoint draft" });
-    expect(heading).toHaveFocus();
+    await waitFor(() => expect(heading).toHaveFocus());
     expect(screen.getByText("Checkpoint draft — not recording")).toBeInTheDocument();
     expect(screen.getByText(/Nothing has been sent anywhere/)).toBeInTheDocument();
     expect(screen.getByText(/Not taken — The folder is not inside a Git repository/)).toBeInTheDocument();
