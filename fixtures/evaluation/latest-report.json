@@ -15,7 +15,7 @@
       "outsideRootSuccesses": 0,
       "nextActionMatched": true,
       "materialCorrections": 0,
-      "checkpointPrepMs": 98,
+      "checkpointPrepMs": 92,
       "modelLatencyMs": 380,
       "details": "Verified fact linked to failing command and fact note; next action runs LOCK_DEBUG=1."
     },
@@ -32,7 +32,7 @@
       "outsideRootSuccesses": 0,
       "nextActionMatched": true,
       "materialCorrections": 0,
-      "checkpointPrepMs": 93,
+      "checkpointPrepMs": 85,
       "modelLatencyMs": 410,
       "details": "Both competing hypotheses preserved in hypotheses section; neither promoted to verified_facts."
     },
@@ -49,7 +49,7 @@
       "outsideRootSuccesses": 0,
       "nextActionMatched": true,
       "materialCorrections": 0,
-      "checkpointPrepMs": 128,
+      "checkpointPrepMs": 84,
       "modelLatencyMs": 440,
       "details": "Reverted code attempt preserved in failed_attempts while verified_facts reflects the clean tree."
     },
@@ -66,7 +66,7 @@
       "outsideRootSuccesses": 0,
       "nextActionMatched": true,
       "materialCorrections": 0,
-      "checkpointPrepMs": 102,
+      "checkpointPrepMs": 93,
       "modelLatencyMs": 460,
       "details": "Large >1 MB command output bounded to head+tail with truncation metadata and tail failure preserved."
     },
@@ -83,7 +83,7 @@
       "outsideRootSuccesses": 0,
       "nextActionMatched": true,
       "materialCorrections": 0,
-      "checkpointPrepMs": 90,
+      "checkpointPrepMs": 86,
       "modelLatencyMs": 395,
       "details": "Seeded secrets redacted across SQLite, checkpoint, preview, model prompt, and exports; custom pattern blocked until excluded."
     },
@@ -100,7 +100,7 @@
       "outsideRootSuccesses": 0,
       "nextActionMatched": true,
       "materialCorrections": 0,
-      "checkpointPrepMs": 92,
+      "checkpointPrepMs": 87,
       "modelLatencyMs": 415,
       "details": "Detected BranchChanged, HeadChanged, and WorkingTreeChanged before resume actions."
     },
@@ -117,7 +117,7 @@
       "outsideRootSuccesses": 0,
       "nextActionMatched": true,
       "materialCorrections": 0,
-      "checkpointPrepMs": 106,
+      "checkpointPrepMs": 90,
       "modelLatencyMs": 310,
       "details": "Minimal evidence produced no fabricated facts or hypotheses and stated limitations clearly."
     },
@@ -134,7 +134,7 @@
       "outsideRootSuccesses": 0,
       "nextActionMatched": true,
       "materialCorrections": 2,
-      "checkpointPrepMs": 86,
+      "checkpointPrepMs": 82,
       "modelLatencyMs": 430,
       "details": "User relabelled overclaimed fact to hypothesis; model draft preserved untouched and corrections recorded."
     },
@@ -151,7 +151,7 @@
       "outsideRootSuccesses": 0,
       "nextActionMatched": true,
       "materialCorrections": 0,
-      "checkpointPrepMs": 94,
+      "checkpointPrepMs": 86,
       "modelLatencyMs": 1000,
       "details": "Timeout preserved draft for retry; unsupported fact in first reply was rejected and repaired on attempt 2."
     },
@@ -168,14 +168,83 @@
       "outsideRootSuccesses": 0,
       "nextActionMatched": true,
       "materialCorrections": 0,
-      "checkpointPrepMs": 104,
+      "checkpointPrepMs": 99,
       "modelLatencyMs": 360,
       "details": "Rejected outside-root symlinks and traversals, recovered crash with 0 lost events, and relinked moved project."
+    }
+  ],
+  "workflows": [
+    {
+      "id": "W01",
+      "persona": "Maya (Senior Backend Engineer)",
+      "title": "Reverted dead-end, secret blocking, drift detection, and multi-interval resume",
+      "stagesCompleted": 4,
+      "stagesTotal": 4,
+      "checkpointsCreated": 2,
+      "driftSignalsObserved": 3,
+      "exportsVerified": 0,
+      "secretLeaksFound": 0,
+      "passed": true,
+      "details": "Completed 2 checkpoint intervals across ACTIVE -> READY -> RESUMED, blocked seeded secret, surfaced 3 drift signals, and verified non-overlapping second checkpoint interval."
+    },
+    {
+      "id": "W02",
+      "persona": "Arjun (Solo Founder)",
+      "title": "Instant offline save, draft discard + continuation, and moved-project relinking",
+      "stagesCompleted": 4,
+      "stagesTotal": 4,
+      "checkpointsCreated": 2,
+      "driftSignalsObserved": 1,
+      "exportsVerified": 0,
+      "secretLeaksFound": 0,
+      "passed": true,
+      "details": "Discarded initial checkpoint draft without losing events, generated capsule on second save, detected RepositoryUnavailable after folder move, and relinked project root."
+    },
+    {
+      "id": "W03",
+      "persona": "Priya (Applied ML Research Engineer)",
+      "title": "Noisy output bounding, repair of hypothesis-as-fact, and authoritative human relabelling",
+      "stagesCompleted": 4,
+      "stagesTotal": 4,
+      "checkpointsCreated": 1,
+      "driftSignalsObserved": 0,
+      "exportsVerified": 0,
+      "secretLeaksFound": 0,
+      "passed": true,
+      "details": "Bounded >256 KB benchmark output preserving final failure, repaired unsupported fact from hypothesis note, and recorded human fact->hypothesis relabelling without mutating draft."
+    },
+    {
+      "id": "W04",
+      "persona": "Elena (Staff Security & Platform Engineer)",
+      "title": "Custom redaction policy, boundary enforcement, exports, and complete thread purge",
+      "stagesCompleted": 4,
+      "stagesTotal": 4,
+      "checkpointsCreated": 1,
+      "driftSignalsObserved": 0,
+      "exportsVerified": 2,
+      "secretLeaksFound": 0,
+      "passed": true,
+      "details": "Verified custom regex redaction, rejected traversal and excluded globs, exported JSON and Markdown, and purged all database rows and export files."
+    },
+    {
+      "id": "W05",
+      "persona": "Marcus (On-Call SRE)",
+      "title": "Crash recovery, 503 outage retry, shift-handoff exports, pause-all, and archive",
+      "stagesCompleted": 4,
+      "stagesTotal": 4,
+      "checkpointsCreated": 1,
+      "driftSignalsObserved": 0,
+      "exportsVerified": 2,
+      "secretLeaksFound": 0,
+      "passed": true,
+      "details": "Recovered interrupted active thread with 0 lost events, survived 503 model outage, exported Markdown/JSON shift handoff, paused all capture, and archived thread."
     }
   ],
   "summary": {
     "scenariosTotal": 10,
     "scenariosPassed": 10,
+    "workflowsTotal": 5,
+    "workflowsPassed": 5,
     "unsupportedVerifiedFactsAfterValidation": 0,
     "verifiedFactsTotal": 10,
     "verifiedFactsSupported": 10,
@@ -185,7 +254,7 @@
     "acknowledgedEventsLostOnRestart": 0,
     "nextActionAgreement": 1.0,
     "materialCorrectionRate": 0.1,
-    "maxCheckpointPrepMs": 128,
+    "maxCheckpointPrepMs": 99,
     "modelLatencyP50Ms": 415,
     "modelLatencyP95Ms": 490,
     "pairedResumeStepsRawHistory": 8,
@@ -238,7 +307,7 @@
     {
       "name": "Offline checkpoint preparation (max)",
       "target": "< 2000 ms",
-      "observed": "128 ms",
+      "observed": "99 ms",
       "passed": true
     },
     {
@@ -251,6 +320,12 @@
       "name": "Resume effort / time reduction (paired benchmark)",
       "target": ">= 30.0% faster than raw Git/terminal history",
       "observed": "75.0% fewer inspection steps (2 capsule steps vs 8 raw history artifacts; see limitations for live human timing)",
+      "passed": true
+    },
+    {
+      "name": "End-to-end persona workflows passed (W01–W05)",
+      "target": "5/5 (100.0%)",
+      "observed": "5/5 (100.0%)",
       "passed": true
     }
   ],
