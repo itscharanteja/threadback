@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="82 82 348 348" role="img" aria-label="Folded Note menu bar glyph">
+
+      <path d="M146 119h164l66 66v208H146c-15 0-27-12-27-27V146c0-15 12-27 27-27z" fill="none" stroke="#26372c" stroke-width="28" stroke-linejoin="round"/>
+      <path d="M308 120v67h67" fill="none" stroke="#26372c" stroke-width="25" stroke-linejoin="round"/>
+      <path d="M176 249h120m-120 57h86" fill="none" stroke="#26372c" stroke-width="25" stroke-linecap="round"/>
+      <circle cx="338" cy="315" r="32" fill="#26372c"/>
+</svg>

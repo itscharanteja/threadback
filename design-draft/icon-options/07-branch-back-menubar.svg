@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="82 82 348 348" role="img" aria-label="Branch Back menu bar glyph">
+
+      <path d="M154 132v204c0 39 25 59 60 59h134" fill="none" stroke="#26372c" stroke-width="31" stroke-linecap="round"/>
+      <path d="M154 247c0-45 32-69 74-69h114" fill="none" stroke="#26372c" stroke-width="31" stroke-linecap="round"/>
+      <circle cx="154" cy="132" r="27" fill="#26372c"/><circle cx="342" cy="178" r="27" fill="#26372c"/>
+      <path d="m318 365 33 30-33 30" fill="none" stroke="#26372c" stroke-width="29" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

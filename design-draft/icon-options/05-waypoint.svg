@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Waypoint app icon">
+  <rect x="20" y="20" width="472" height="472" rx="111" fill="#244966"/>
+  <path d="M76 56c98-32 249-32 351 29" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="36" stroke-linecap="round"/>
+
+      <path d="M153 355V239c0-60 40-101 103-101h103" fill="none" stroke="#f8f9f2" stroke-width="35" stroke-linecap="round"/>
+      <circle cx="153" cy="355" r="31" fill="#7ed5df"/>
+      <circle cx="359" cy="138" r="31" fill="#7ed5df"/>
+      <path d="M220 269h133m-54-53 54 53-54 53" fill="none" stroke="#f8f9f2" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

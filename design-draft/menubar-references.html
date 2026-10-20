@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>ThreadBack — Menu bar concept</title>
+  <style>
+    :root {
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #24362b;
+      background: #f5f7f2;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+      outline: 3px solid #5f9872; outline-offset: 2px;
+    }
+    button:disabled { cursor: not-allowed; opacity: .48; }
+    h1, h2, h3, h4, p { margin: 0; }
+    p { line-height: 1.55; }
+    [hidden] { display: none !important; }
+
+    .page { max-width: 1380px; margin: auto; padding: 28px 38px 80px; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid #dce5db; }
+    .identity { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 790; letter-spacing: -.035em; }
+    .identity-mark { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 9px; background: #286547; color: #fff; font-size: 20px; line-height: 1; }
+    .identity span:last-child { color: #91a296; font-weight: 550; }
+    .header-meta { display: flex; align-items: center; gap: 9px; color: #78887b; font-size: 11px; white-space: nowrap; }
+    .header-meta::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #5c9d70; }
+    .intro { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 40px; align-items: end; padding: 39px 0 31px; }
+    .eyebrow { color: #497956; font-size: 11px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+    .intro h1 { max-width: 790px; margin: 13px 0 16px; font-size: clamp(37px, 4.4vw, 66px); line-height: 1.04; letter-spacing: -.065em; }
+    .intro p { max-width: 650px; font-size: 16px; color: #687a6d; }
+    .behavior { border-left: 2px solid #a7c9ad; padding-left: 20px; }
+    .behavior strong { display: block; font-size: 13px; color: #2a6041; margin-bottom: 9px; }
+    .behavior-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 0; border-top: 1px solid #dfe7dd; font-size: 12px; color: #697a6c; }
+    .behavior-row b { color: #2b4032; font-size: 12px; }
+    .small-tray { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border-radius: 5px; background: #e8eee7; color: #275d3e; font-weight: 800; font-size: 11px; white-space: nowrap; }
+    .small-tray.focused { background: #d4e4d5; }
+    .tiny-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #4a9f66; }
+
+    .workspace { display: grid; grid-template-columns: 276px minmax(0, 1fr); gap: 20px; align-items: stretch; }
+    .guide { min-width: 0; background: #fff; border: 1px solid #dce5da; border-radius: 17px; padding: 24px; box-shadow: 0 8px 24px #23412a0a; }
+    .guide h2 { font-size: 17px; letter-spacing: -.035em; margin: 8px 0 10px; }
+    .guide p { color: #6a7b6d; font-size: 12px; }
+    .guide-divider { height: 1px; background: #e7ece5; margin: 22px 0; }
+    .guide-label { color: #78927c; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 10px; }
+    .journey { display: grid; gap: 7px; }
+    .journey button { width: 100%; display: flex; align-items: center; gap: 10px; min-height: 42px; text-align: left; background: transparent; color: #526558; border: 1px solid transparent; border-radius: 9px; padding: 8px 10px; font-size: 12px; font-weight: 650; }
+    .journey button:hover { background: #f4f8f2; }
+    .journey button[aria-current="step"] { background: #e9f2e8; color: #245d3e; border-color: #d4e5d3; }
+    .journey .step-number { display: grid; place-items: center; flex: none; width: 21px; height: 21px; border: 1px solid #cfdfd0; border-radius: 7px; font-size: 10px; font-weight: 800; color: #5d8566; }
+    .journey button[aria-current="step"] .step-number { background: #2d6749; border-color: #2d6749; color: #fff; }
+    .guide-tip { border-radius: 10px; background: #f2f6ef; padding: 13px; color: #5c735f; font-size: 11px; line-height: 1.5; }
+    .guide-tip strong { color: #2e5d40; }
+    .reset { margin-top: 17px; padding: 0; border: 0; background: transparent; color: #397352; font-size: 12px; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
+
+    .demo { min-width: 0; border: 1px solid #d4dfd5; border-radius: 17px; background: #e3ebe0; overflow: hidden; box-shadow: 0 12px 30px #24442b14; }
+    .demo-caption { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 10px 17px; background: #f9fbf7; border-bottom: 1px solid #dce6db; font-size: 11px; color: #758678; }
+    .demo-caption strong { color: #4b6f54; font-weight: 750; }
+    .desktop { position: relative; min-height: 720px; overflow: hidden; background: radial-gradient(circle at 25% 90%, #d7e8da 0, #cfdfd1 30%, transparent 58%), linear-gradient(140deg, #cbdccb, #e8eee1 58%, #d5dfd2); }
+    .desktop::before { content: ""; position: absolute; right: -100px; bottom: -240px; width: 640px; height: 640px; border: 1px solid #ffffff82; border-radius: 50%; box-shadow: 0 0 0 76px #ffffff19, 0 0 0 152px #ffffff16; }
+    .desktop-title { position: absolute; left: 6%; bottom: 84px; max-width: 310px; color: #ffffffc9; font-size: clamp(45px, 5vw, 77px); font-weight: 790; line-height: .89; letter-spacing: -.08em; user-select: none; }
+    .desktop-subtitle { position: absolute; left: 6%; bottom: 51px; color: #ffffffde; font-size: 12px; font-weight: 650; letter-spacing: .02em; }
+    .mac-bar { height: 32px; display: flex; align-items: center; gap: 15px; padding: 0 12px; background: #f9fbf7d9; border-bottom: 1px solid #ffffffa6; color: #334a39; font-size: 11px; white-space: nowrap; backdrop-filter: blur(16px); }
+    .mac-bar .apple { font-size: 16px; line-height: 0; }
+    .mac-bar strong { font-weight: 800; }
+    .mac-spacer { flex: 1; }
+    .mac-icon { font-size: 13px; color: #506856; }
+    .menu-trigger { flex: none; display: inline-flex; justify-content: center; align-items: center; gap: 5px; min-width: 28px; height: 23px; padding: 0 6px; border: 0; border-radius: 5px; background: transparent; color: #285f3e; font-size: 13px; font-weight: 800; transition: background .16s ease, min-width .2s ease; }
+    .menu-trigger:hover, .menu-trigger[aria-expanded="true"] { background: #d9e9dc; }
+    .menu-trigger[aria-expanded="true"] { min-width: 103px; }
+    .menu-trigger .tray-symbol { font-size: 17px; line-height: 1; }
+    .menu-trigger .trigger-label { display: none; font-size: 11px; letter-spacing: -.025em; }
+    .menu-trigger[aria-expanded="true"] .trigger-label { display: inline; }
+    .menu-trigger .status-dot { width: 5px; height: 5px; border-radius: 50%; background: #3c9c5d; }
+    .menu-trigger[data-status="saved"] .status-dot { background: #8ca595; }
+    .menu-trigger[data-status="attention"] .status-dot { background: #d7a13b; }
+    .idle-hint { position: absolute; top: 69px; right: 35px; display: flex; align-items: center; gap: 10px; background: #fffefaee; color: #42644a; border: 1px solid #dbe7d9; border-radius: 9px; padding: 10px 12px; box-shadow: 0 8px 22px #2f4d3420; font-size: 12px; font-weight: 700; }
+    .idle-hint::before { content: ""; position: absolute; top: -6px; right: 99px; width: 10px; height: 10px; background: #fffefa; border-left: 1px solid #dbe7d9; border-top: 1px solid #dbe7d9; transform: rotate(45deg); }
+    .idle-hint span { font-size: 16px; }
+    .dock { position: absolute; left: 50%; bottom: 19px; transform: translateX(-50%); display: flex; gap: 9px; padding: 7px 9px; border-radius: 16px; border: 1px solid #ffffffb8; background: #f8fbf586; backdrop-filter: blur(12px); }
+    .dock span { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 8px; background: #eef4e8; color: #618166; font-size: 13px; }
+    .dock span:nth-child(2) { background: #3c694b; color: #fff; }
+    .dock span:nth-child(3) { background: #e9cfa9; color: #745b37; }
+
+    .popover { position: absolute; top: 38px; right: 11px; width: 392px; max-height: 642px; display: flex; flex-direction: column; background: #fdfefa; border: 1px solid #d5dfd4; border-radius: 14px; box-shadow: 0 25px 54px #213d2d37, 0 5px 15px #27463017; overflow: hidden; color: #263a2d; }
+    .popover-header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 16px; border-bottom: 1px solid #e6ece5; background: #fcfdfa; }
+    .popover-brand { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; letter-spacing: -.03em; }
+    .pop-mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: #2e6849; color: #fff; font-size: 16px; }
+    .header-tools { display: flex; align-items: center; gap: 3px; }
+    .icon-button { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #758578; font-size: 17px; line-height: 1; }
+    .icon-button:hover { background: #eff4ed; color: #2d5d41; }
+    .view { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    .view-content { padding: 18px 17px 20px; }
+    .overline { display: flex; align-items: center; gap: 6px; color: #397653; font-size: 10px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+    .overline .dot { width: 6px; height: 6px; border-radius: 50%; background: #469e63; }
+    .overline.saved .dot { background: #8ba391; }
+    .overline.attention { color: #967128; }
+    .overline.attention .dot { background: #daa53e; }
+    .view h2 { font-size: 21px; line-height: 1.15; letter-spacing: -.048em; margin: 9px 0 5px; }
+    .view h3 { font-size: 13px; letter-spacing: -.015em; }
+    .subtle { color: #738076; font-size: 11px; }
+    .description { color: #5f7063; font-size: 12px; }
+    .project-line { display: flex; align-items: center; gap: 6px; color: #768779; font-size: 11px; margin-top: 4px; }
+    .project-line .branch { padding: 2px 5px; border-radius: 4px; background: #f1f5ef; color: #638168; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 10px; }
+    .hairline { height: 1px; background: #e8eee6; margin: 16px 0; }
+    .metric-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin: 16px 0 0; }
+    .metric { padding: 10px 10px 9px; border-radius: 9px; background: #f1f6ef; }
+    .metric strong { display: block; font-size: 17px; letter-spacing: -.04em; }
+    .metric span { display: block; color: #78887b; font-size: 10px; margin-top: 2px; }
+    .buttons { display: flex; gap: 8px; margin-top: 15px; }
+    .button { min-height: 35px; border: 1px solid #d7e3d6; border-radius: 8px; background: #fff; color: #315b40; padding: 7px 10px; font-size: 11px; font-weight: 750; white-space: nowrap; }
+    .button:hover:not(:disabled) { background: #f0f6ef; }
+    .button.primary { flex: 1; background: #2f694a; border-color: #2f694a; color: #fff; }
+    .button.primary:hover:not(:disabled) { background: #25583c; }
+    .button.ghost { border-color: transparent; background: transparent; padding-left: 3px; padding-right: 3px; }
+    .button.danger { color: #92543c; }
+    .section-label { color: #78907b; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .11em; margin-bottom: 9px; }
+    .note-row { display: flex; gap: 6px; }
+    .note-row select, .note-row input { min-width: 0; min-height: 36px; border: 1px solid #dae5d8; background: #fff; color: #344c39; border-radius: 8px; font-size: 11px; }
+    .note-row select { width: 88px; padding: 0 7px; }
+    .note-row input { flex: 1; padding: 0 9px; }
+    .note-row .button { min-width: 36px; font-size: 16px; }
+    .activity { list-style: none; padding: 0; margin: 0; }
+    .activity li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 7px 0; border-bottom: 1px solid #edf0eb; color: #4b5e50; font-size: 11px; }
+    .activity li:last-child { border-bottom: 0; }
+    .activity time { color: #96a298; }
+    .activity .new-note { color: #2c7048; }
+    .notice { margin-top: 13px; padding: 10px 11px; border: 1px solid #d6e9d6; border-radius: 9px; background: #edf7eb; color: #406a49; font-size: 11px; line-height: 1.5; }
+    .notice.warning { background: #fff5df; border-color: #f0dfba; color: #7b612d; }
+    .notice.blocked { background: #fff3ee; border-color: #eed8cb; color: #8e5b42; }
+    .summary-card { border: 1px solid #dce8da; border-radius: 10px; background: #f7faf5; padding: 12px; margin-top: 13px; }
+    .summary-card .section-label { margin-bottom: 6px; }
+    .summary-card p { color: #435c48; font-size: 11px; }
+    .summary-card strong { color: #294834; }
+    .back-button { padding: 0; border: 0; background: transparent; color: #447a53; font-size: 11px; font-weight: 750; }
+    .back-button:hover { text-decoration: underline; }
+    .review-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #e9eee7; }
+    .review-row input { margin: 3px 0 0; accent-color: #397b52; }
+    .review-row strong { display: block; font-size: 11px; }
+    .review-row small { display: block; color: #819083; font-size: 10px; line-height: 1.4; margin-top: 3px; }
+    .review-row:last-of-type { border-bottom: 0; }
+    .review-count { margin-top: 9px; color: #5c715f; font-size: 11px; }
+    details { margin-top: 11px; }
+    summary { color: #3e7651; font-size: 11px; font-weight: 750; cursor: pointer; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; padding: 10px; border-radius: 8px; background: #f1f5ef; color: #526454; font: 10px/1.5 ui-monospace, SFMono-Regular, monospace; }
+    .entry-source { color: #48825c; font-size: 10px; }
+    .draft-fact { padding: 10px 11px; border-left: 2px solid #92be9b; background: #f5f9f3; border-radius: 0 7px 7px 0; color: #43594a; font-size: 11px; line-height: 1.5; margin-top: 11px; }
+    .draft-fact em { display: block; font-style: normal; margin-top: 4px; color: #548565; font-size: 10px; }
+    .next-action { margin-top: 7px; font-size: 12px; line-height: 1.5; font-weight: 690; color: #2b4031; }
+    .edit-field { display: block; width: 100%; min-height: 72px; resize: vertical; border: 1px solid #cbdcca; border-radius: 8px; padding: 9px; background: #fff; color: #2b4031; font-size: 12px; line-height: 1.45; margin-top: 8px; }
+    .linkish { padding: 0; border: 0; background: transparent; color: #39774f; font-size: 11px; font-weight: 750; text-decoration: underline; text-underline-offset: 2px; }
+    .source-panel { margin-top: 8px; border-radius: 8px; padding: 10px; background: #f2f6ef; color: #4c6652; font-size: 10px; line-height: 1.5; }
+    .footer { flex: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 14px; border-top: 1px solid #e7ece5; background: #f8faf6; }
+    .footer .local { color: #829184; font-size: 10px; }
+    .footer nav { display: flex; gap: 1px; }
+    .footer button { border: 0; border-radius: 6px; background: transparent; color: #617a67; padding: 6px 7px; font-size: 10px; font-weight: 650; }
+    .footer button:hover, .footer button[aria-current="page"] { background: #e6f0e4; color: #2b6845; }
+    .thread-item { display: block; width: 100%; border: 1px solid #e0e9de; border-radius: 9px; background: #fff; text-align: left; padding: 10px; margin-top: 8px; }
+    .thread-item:hover { background: #f4f8f3; }
+    .thread-item strong { display: block; font-size: 11px; color: #314c38; }
+    .thread-item span { display: block; margin-top: 4px; font-size: 10px; color: #7b8d7f; }
+    .settings-row { display: flex; gap: 11px; align-items: flex-start; padding: 11px 0; border-bottom: 1px solid #e9eee7; }
+    .settings-row:last-child { border-bottom: 0; }
+    .settings-icon { display: grid; place-items: center; width: 27px; height: 27px; flex: none; border-radius: 8px; background: #eaf3e9; color: #467c55; font-size: 15px; }
+    .settings-row strong { display: block; font-size: 11px; }
+    .settings-row span:last-child { display: block; color: #809083; font-size: 10px; line-height: 1.5; margin-top: 3px; }
+    .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: min(90vw, 520px); z-index: 5; background: #254e35; color: white; padding: 10px 14px; border-radius: 9px; box-shadow: 0 10px 25px #17312232; font-size: 12px; text-align: center; }
+    .notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 25px; }
+    .note-card { border-top: 2px solid #bad0b8; padding: 13px 0 0; }
+    .note-card span { color: #6e9776; font-size: 10px; font-weight: 850; letter-spacing: .11em; }
+    .note-card h3 { margin: 8px 0 5px; font-size: 14px; letter-spacing: -.02em; }
+    .note-card p { color: #6d7d6f; font-size: 11px; }
+    .artifact-note { margin-top: 24px; color: #8a9b8c; font-size: 11px; }
+    @media (max-width: 1050px) {
+      .intro { grid-template-columns: 1fr; gap: 20px; }
+      .behavior { max-width: 620px; }
+      .workspace { grid-template-columns: 1fr; }
+      .guide { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); column-gap: 25px; }
+      .guide-divider { display: none; }
+      .guide-left { grid-row: span 3; }
+      .guide-tip { align-self: end; }
+      .reset { justify-self: start; }
+    }
+    @media (max-width: 640px) {
+      .page { padding: 18px 13px 50px; }
+      .page-header { padding-bottom: 16px; }
+      .header-meta { display: none; }
+      .intro { padding: 28px 0 22px; }
+      .intro h1 { font-size: 42px; }
+      .intro p { font-size: 14px; }
+      .guide { display: block; padding: 18px; }
+      .guide-divider { display: block; margin: 16px 0; }
+      .journey { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .journey button { min-width: 0; font-size: 11px; }
+      .desktop { min-height: 695px; }
+      .mac-bar { gap: 8px; }
+      .mac-bar .optional { display: none; }
+      .popover { width: min(392px, calc(100% - 12px)); right: 6px; }
+      .idle-hint { right: 10px; }
+      .desktop-title { font-size: 47px; bottom: 91px; }
+      .notes { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) { .menu-trigger { transition: none; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <div class="identity"><span class="identity-mark">↩</span> ThreadBack <span>/ menu bar concept</span></div>
+      <div class="header-meta">Interactive design reference · sample data only</div>
+    </header>
+
+    <section class="intro" aria-labelledby="page-title">
+      <div>
+        <div class="eyebrow">The status-first popover</div>
+        <h1 id="page-title">One icon until you need it.</h1>
+        <p>ThreadBack lives in the macOS menu bar. Open it for the current thread, a local checkpoint, or the next safe action, then return to your work without opening a large window.</p>
+      </div>
+      <div class="behavior" aria-label="Menu bar behavior">
+        <strong>Confirmed menu bar behavior</strong>
+        <div class="behavior-row"><b>Idle / unfocused</b><span class="small-tray">↩ <i class="tiny-dot"></i></span></div>
+        <div class="behavior-row"><b>Clicked / focused</b><span class="small-tray focused">↩ <i class="tiny-dot"></i> ThreadBack</span></div>
+        <p style="font-size:11px;margin-top:8px;color:#829083">Click outside or press Esc to return to the icon-only state.</p>
+      </div>
+    </section>
+
+    <main class="workspace">
+      <aside class="guide" aria-label="Prototype guide">
+        <div class="guide-left">
+          <div class="eyebrow">Try the prototype</div>
+          <h2>A complete small-screen journey</h2>
+          <p>Click the ThreadBack icon in the mock menu bar. Each action stays inside the popover.</p>
+          <div class="guide-divider"></div>
+          <div class="guide-label">Jump to a moment</div>
+          <div class="journey" role="group" aria-label="Jump to a prototype moment">
+            <button type="button" data-jump="working" aria-current="step"><span class="step-number">1</span>Working</button>
+            <button type="button" data-jump="saved"><span class="step-number">2</span>Saved locally</button>
+            <button type="button" data-jump="review"><span class="step-number">3</span>Review sharing</button>
+            <button type="button" data-jump="draft"><span class="step-number">4</span>Approve summary</button>
+            <button type="button" data-jump="return"><span class="step-number">5</span>Return to work</button>
+          </div>
+        </div>
+        <div class="guide-tip"><strong>Designed for focus.</strong> The popover leads with one primary action for each moment. Detailed consent and evidence remain one step deeper, still in the same compact surface.</div>
+        <button class="reset" id="reset-demo" type="button">Reset to icon-only view ↗</button>
+      </aside>
+
+      <section class="demo" aria-label="Interactive ThreadBack menu bar prototype">
+        <div class="demo-caption"><strong>LIVE CONCEPT</strong><span>Click the menu bar icon · Esc closes</span></div>
+        <div class="desktop" id="desktop">
+          <div class="mac-bar">
+            <span class="apple" aria-hidden="true">●</span><strong>Code</strong><span class="optional">File</span><span class="optional">Edit</span><span class="optional">View</span>
+            <span class="mac-spacer"></span><span class="mac-icon optional" aria-hidden="true">◔</span>
+            <button class="menu-trigger" id="menu-trigger" type="button" aria-label="Open ThreadBack" aria-controls="popover" aria-expanded="false" data-status="working"><span class="tray-symbol" aria-hidden="true">↩</span><span class="status-dot" aria-hidden="true"></span><span class="trigger-label">ThreadBack</span></button>
+            <span>Tue 20 Oct</span>
+          </div>
+          <div class="idle-hint" id="idle-hint"><span aria-hidden="true">↗</span> Click the icon to open ThreadBack</div>
+          <div class="desktop-title" aria-hidden="true">Stay in<br>your flow.</div>
+          <div class="desktop-subtitle">Your place is one click away.</div>
+          <div class="dock" aria-hidden="true"><span>⌕</span><span>⌘</span><span>◈</span><span>▣</span><span>◉</span></div>
+
+          <div class="popover" id="popover" role="dialog" aria-label="ThreadBack menu" hidden>
+            <div class="popover-header">
+              <div class="popover-brand"><span class="pop-mark">↩</span> ThreadBack</div>
+              <div class="header-tools"><button class="icon-button" type="button" id="close-popover" aria-label="Close ThreadBack">×</button></div>
+            </div>
+
+            <section class="view" data-view="working" aria-labelledby="working-title">
+              <div class="view-content">
+                <div class="overline"><span class="dot"></span> Recording this thread</div>
+                <h2 id="working-title" tabindex="-1">Duplicate capture investigation</h2>
+                <p class="description">Find why retries produce a second provider capture.</p>
+                <div class="project-line">payments-service <span aria-hidden="true">·</span> <span class="branch">main</span></div>
+                <div class="metric-row"><div class="metric"><strong id="event-count">12</strong><span>events</span></div><div class="metric"><strong id="note-count">3</strong><span>notes</span></div><div class="metric"><strong>8m</strong><span>working</span></div></div>
+                <div class="buttons"><button class="button primary" type="button" id="save-place">Save my place</button><button class="button" type="button" id="pause-thread">Pause</button></div>
+                <div class="hairline"></div>
+                <div class="section-label">Add a quick note</div>
+                <div class="note-row"><select id="note-kind" aria-label="Note type"><option>Fact</option><option>Idea</option><option>Question</option></select><input id="quick-note" type="text" placeholder="What did you learn?" aria-label="Quick note"><button class="button" type="button" id="add-note" aria-label="Add note">↗</button></div>
+                <div class="hairline"></div>
+                <div class="section-label">Latest activity</div>
+                <ul class="activity" id="activity-list"><li><span>Focused test failed · 2 captures</span><time>2m ago</time></li><li><span>Git snapshot on main</span><time>8m ago</time></li></ul>
+                <p class="subtle" style="margin-top:12px">Only approved project activity and explicit notes are recorded.</p>
+              </div>
+            </section>
+
+            <section class="view" data-view="paused" aria-labelledby="paused-title" hidden>
+              <div class="view-content">
+                <div class="overline saved"><span class="dot"></span> Recording paused</div>
+                <h2 id="paused-title" tabindex="-1">Your work is still here.</h2>
+                <p class="description">The thread is paused. New commands will not be recorded until you resume it.</p>
+                <div class="summary-card"><div class="section-label">Current thread</div><p><strong>Duplicate capture investigation</strong><br>payments-service · 12 events so far</p></div>
+                <div class="buttons"><button class="button primary" type="button" id="resume-paused">Resume recording</button><button class="button" type="button" id="save-paused">Save my place</button></div>
+              </div>
+            </section>
+
+            <section class="view" data-view="saved" aria-labelledby="saved-title" hidden>
+              <div class="view-content">
+                <div class="overline saved"><span class="dot"></span> Checkpoint saved locally</div>
+                <h2 id="saved-title" tabindex="-1">Ready when you return.</h2>
+                <p class="description">Your thread, Git snapshot, and evidence are saved on this Mac.</p>
+                <div class="summary-card"><div class="section-label">Saved thread</div><p><strong>Duplicate capture investigation</strong><br>12 evidence events · 3 notes · main</p></div>
+                <div class="notice">Nothing has been sent to a model. You can close ThreadBack now and still return to this checkpoint.</div>
+                <div class="buttons"><button class="button primary" type="button" data-go="review">Review AI sharing</button><button class="button" type="button" data-go="working">Keep working</button></div>
+                <div class="hairline"></div>
+                <p class="subtle">A model summary is optional. The saved checkpoint remains useful offline.</p>
+              </div>
+            </section>
+
+            <section class="view" data-view="review" aria-labelledby="review-title" hidden>
+              <div class="view-content">
+                <button class="back-button" type="button" data-go="saved">← Saved checkpoint</button>
+                <div class="overline saved" style="margin-top:13px"><span class="dot"></span> Nothing sent yet</div>
+                <h2 id="review-title" tabindex="-1">Review what AI receives</h2>
+                <p class="description">Choose the entries, inspect the exact payload, then decide whether to generate a draft.</p>
+                <div class="summary-card"><div class="section-label">Destination</div><p>NVIDIA Nemotron via Nebius Token Factory<br><span class="subtle">Only the selected, redacted entries below</span></p></div>
+                <label class="review-row"><input class="send-entry" type="checkbox" checked data-size="2.1" data-key="git_snapshot"><span><strong>Git snapshot</strong><small>Branch, HEAD, and changed files · 2.1 KB</small></span></label>
+                <label class="review-row"><input class="send-entry" type="checkbox" checked data-size="6.3" data-key="focused_test"><span><strong>Focused test output</strong><small>2 captures observed; credential redacted · 6.3 KB</small></span></label>
+                <label class="review-row"><input type="checkbox" disabled><span><strong>Blocked command output</strong><small>Credential detected; cannot be sent</small></span></label>
+                <div class="review-count" id="review-count" aria-live="polite">2 entries · 8.4 KB selected</div>
+                <details id="payload-details"><summary>Inspect exact payload and fingerprint</summary><pre id="payload-preview"></pre><p class="subtle" style="margin-top:6px">Illustrative payload · fingerprint 54a7c2…</p></details>
+                <div class="buttons"><button class="button primary" type="button" id="generate-draft">Generate draft summary</button><button class="button" type="button" data-go="saved">Cancel</button></div>
+                <p class="subtle" style="margin-top:10px">This prototype sends nothing. In the app, Generate must require a fresh, clean payload hash.</p>
+              </div>
+            </section>
+
+            <section class="view" data-view="draft" aria-labelledby="draft-title" hidden>
+              <div class="view-content">
+                <div class="overline"><span class="dot"></span> Draft · your approval needed</div>
+                <h2 id="draft-title" tabindex="-1">A place to start again.</h2>
+                <p class="description">Review the model’s claims and edit the next action before you approve it.</p>
+                <div class="hairline"></div>
+                <div class="section-label">Verified fact</div>
+                <div class="draft-fact">The focused retry test produced two provider captures.<em>Linked to test output and command event</em></div>
+                <div class="section-label" style="margin-top:15px">Idea to check</div>
+                <p class="description">A second worker may bypass the same lock.</p>
+                <div class="hairline"></div>
+                <div class="section-label">Suggested next action</div>
+                <p class="next-action" id="draft-action">Run the lock-owner test and compare the owner used by both workers.</p>
+                <textarea class="edit-field" id="action-editor" aria-label="Edit next action" hidden>Run the lock-owner test and compare the owner used by both workers.</textarea>
+                <button class="linkish" type="button" id="edit-action" style="margin-top:8px">Edit next action</button>
+                <div class="buttons"><button class="button primary" type="button" id="approve-summary">Approve summary</button><button class="button" type="button" data-go="review">Back to review</button></div>
+                <p class="subtle" style="margin-top:10px">Approval stores your version separately from the model draft.</p>
+              </div>
+            </section>
+
+            <section class="view" data-view="return" aria-labelledby="return-title" hidden>
+              <div class="view-content">
+                <div class="overline attention"><span class="dot"></span> Your project changed</div>
+                <h2 id="return-title" tabindex="-1">Pick up the capture bug.</h2>
+                <p class="description">Your approved checkpoint is ready. Check the new project state before resuming.</p>
+                <div class="notice warning"><strong>Since the checkpoint</strong><br>Branch: main → hotfix/review-feedback<br>Working tree: new local edits</div>
+                <div class="summary-card"><div class="section-label">Your next action</div><p class="next-action" id="return-action">Run the lock-owner test and compare the owner used by both workers.</p><button class="linkish" type="button" id="show-sources" style="margin-top:9px" aria-expanded="false" aria-controls="source-panel">View linked evidence ↗</button><div class="source-panel" id="source-panel" hidden><strong>Source 1:</strong> focused retry test output — 2 provider captures.<br><strong>Source 2:</strong> explicit command event from this thread.</div></div>
+                <div class="buttons"><button class="button primary" type="button" id="copy-action">Copy next action</button><button class="button" type="button" id="resume-return">Resume thread</button></div>
+                <p class="subtle" style="margin-top:12px">Nothing runs automatically. Resume starts a new evidence interval.</p>
+              </div>
+            </section>
+
+            <section class="view" data-view="threads" aria-labelledby="threads-title" hidden>
+              <div class="view-content">
+                <div class="overline saved"><span class="dot"></span> On this Mac</div>
+                <h2 id="threads-title" tabindex="-1">Your threads</h2>
+                <p class="description">A small list for switching context, kept inside the menu bar surface.</p>
+                <button class="thread-item" type="button" data-go="working"><strong>Duplicate capture investigation</strong><span>payments-service · current thread</span></button>
+                <button class="thread-item" type="button" data-go="return"><strong>Lock owner investigation</strong><span>payments-service · approved checkpoint</span></button>
+                <div class="buttons"><button class="button primary" type="button" id="start-thread">Start a thread…</button></div>
+                <p class="subtle" style="margin-top:9px">Project approval can use the system folder picker.</p>
+              </div>
+            </section>
+
+            <section class="view" data-view="settings" aria-labelledby="settings-title" hidden>
+              <div class="view-content">
+                <div class="overline saved"><span class="dot"></span> Local by default</div>
+                <h2 id="settings-title" tabindex="-1">Privacy &amp; settings</h2>
+                <p class="description">Key safeguards remain understandable without opening a full app.</p>
+                <div class="settings-row"><span class="settings-icon">⌂</span><div><strong>Approved project only</strong><span>payments-service is the current project boundary.</span></div></div>
+                <div class="settings-row"><span class="settings-icon">◎</span><div><strong>Explicit capture</strong><span>Commands appear only when run with tb run; no background shell history.</span></div></div>
+                <div class="settings-row"><span class="settings-icon">◇</span><div><strong>Local checkpoints</strong><span>Saving your place never contacts the model.</span></div></div>
+                <div class="settings-row"><span class="settings-icon">↗</span><div><strong>AI requests require review</strong><span>The exact selected payload is shown before each request.</span></div></div>
+              </div>
+            </section>
+
+            <footer class="footer"><span class="local">Stored locally · sample prototype</span><nav aria-label="Popover navigation"><button type="button" id="nav-home" data-go="working" aria-current="page">Home</button><button type="button" id="nav-threads" data-go="threads">Threads</button><button type="button" id="nav-settings" data-go="settings">Privacy</button></nav></footer>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <section class="notes" aria-label="Design decisions">
+      <div class="note-card"><span>01 / DISCOVERABILITY</span><h3>Quiet when idle, explicit on focus</h3><p>The menu bar keeps only the icon and status dot. The name appears while the popover is open so the user knows which utility has focus.</p></div>
+      <div class="note-card"><span>02 / HIERARCHY</span><h3>One main action per moment</h3><p>Save while working, review after saving, approve the draft, then copy or resume. Secondary controls stay visible but quiet.</p></div>
+      <div class="note-card"><span>03 / TRUST</span><h3>Consent stays readable in a small space</h3><p>Local save, model destination, blocked entries, exact payload, evidence links, and project drift have dedicated compact views.</p></div>
+    </section>
+    <p class="artifact-note">Design reference only. Interactions use sample data; no files are read, commands run, or network requests sent.</p>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script>
+    const trigger = document.getElementById('menu-trigger');
+    const popover = document.getElementById('popover');
+    const idleHint = document.getElementById('idle-hint');
+    const views = [...document.querySelectorAll('.view')];
+    const jumpButtons = [...document.querySelectorAll('[data-jump]')];
+    let currentView = 'working';
+    let lastMainView = 'working';
+    let noteCount = 3;
+    let eventCount = 12;
+    let toastTimer;
+
+    function setTriggerStatus(view) {
+      trigger.dataset.status = view === 'return' ? 'attention' : ['saved','paused','review','draft'].includes(view) ? 'saved' : 'working';
+    }
+    function openMenu() {
+      popover.hidden = false;
+      idleHint.hidden = true;
+      trigger.setAttribute('aria-expanded', 'true');
+      trigger.setAttribute('aria-label', 'Close ThreadBack');
+      const title = views.find(view => view.dataset.view === currentView)?.querySelector('h2');
+      if (title) title.focus({ preventScroll: true });
+    }
+    function closeMenu() {
+      popover.hidden = true;
+      idleHint.hidden = false;
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.setAttribute('aria-label', 'Open ThreadBack');
+      trigger.focus({ preventScroll: true });
+    }
+    function showView(name, open = true) {
+      currentView = name;
+      if (!['threads','settings'].includes(name)) lastMainView = name;
+      views.forEach(view => { view.hidden = view.dataset.view !== name; view.scrollTop = 0; });
+      jumpButtons.forEach(button => { if (button.dataset.jump === name) button.setAttribute('aria-current', 'step'); else button.removeAttribute('aria-current'); });
+      document.querySelectorAll('.footer nav button').forEach(button => {
+        const active = name === 'threads' ? button.id === 'nav-threads' : name === 'settings' ? button.id === 'nav-settings' : button.id === 'nav-home';
+        if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
+      });
+      setTriggerStatus(['threads','settings'].includes(name) ? lastMainView : name);
+      if (open) openMenu();
+    }
+    function toast(message) {
+      const box = document.getElementById('toast');
+      box.textContent = message;
+      box.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => box.hidden = true, 3400);
+    }
+    trigger.addEventListener('click', () => popover.hidden ? openMenu() : closeMenu());
+    document.getElementById('close-popover').addEventListener('click', closeMenu);
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && !popover.hidden) closeMenu(); });
+    document.addEventListener('pointerdown', event => { if (!popover.hidden && !popover.contains(event.target) && !trigger.contains(event.target) && !event.target.closest('[data-jump]')) closeMenu(); });
+    document.addEventListener('focusin', event => { if (!popover.hidden && !popover.contains(event.target) && event.target !== trigger && !event.target.closest('[data-jump]')) closeMenu(); });
+    window.addEventListener('blur', () => { if (!popover.hidden) closeMenu(); });
+    document.querySelectorAll('[data-go]').forEach(button => button.addEventListener('click', () => showView(button.dataset.go === 'working' && button.id === 'nav-home' ? lastMainView : button.dataset.go)));
+    jumpButtons.forEach(button => button.addEventListener('click', () => showView(button.dataset.jump)));
+    document.getElementById('reset-demo').addEventListener('click', () => { showView('working', false); closeMenu(); toast('Reset to the icon-only menu bar state.'); });
+    document.getElementById('save-place').addEventListener('click', () => { showView('saved'); toast('Checkpoint saved locally in this concept preview.'); });
+    document.getElementById('save-paused').addEventListener('click', () => { showView('saved'); toast('Checkpoint saved locally in this concept preview.'); });
+    document.getElementById('pause-thread').addEventListener('click', () => showView('paused'));
+    document.getElementById('resume-paused').addEventListener('click', () => showView('working'));
+    document.getElementById('resume-return').addEventListener('click', () => { showView('working'); toast('Recording resumed. No command was run.'); });
+    document.getElementById('start-thread').addEventListener('click', () => toast('A project picker and compact start form would open here.'));
+    document.getElementById('add-note').addEventListener('click', () => {
+      const input = document.getElementById('quick-note');
+      const value = input.value.trim();
+      if (!value) { input.focus(); return; }
+      const kind = document.getElementById('note-kind').value;
+      const item = document.createElement('li');
+      item.className = 'new-note';
+      const text = document.createElement('span');
+      text.textContent = `${kind}: ${value}`;
+      const time = document.createElement('time');
+      time.textContent = 'now';
+      item.append(text, time);
+      document.getElementById('activity-list').prepend(item);
+      input.value = '';
+      noteCount += 1;
+      eventCount += 1;
+      document.getElementById('note-count').textContent = String(noteCount);
+      document.getElementById('event-count').textContent = String(eventCount);
+      toast(`${kind} note added to this preview.`);
+    });
+    document.getElementById('quick-note').addEventListener('keydown', event => { if (event.key === 'Enter') document.getElementById('add-note').click(); });
+    function updatePayload() {
+      const selected = [...document.querySelectorAll('.send-entry:checked')];
+      const size = selected.reduce((sum, entry) => sum + Number(entry.dataset.size), 0);
+      document.getElementById('review-count').textContent = `${selected.length} ${selected.length === 1 ? 'entry' : 'entries'} · ${size.toFixed(1)} KB selected`;
+      document.getElementById('generate-draft').disabled = selected.length === 0;
+      const payload = { thread: 'Duplicate capture investigation', goal: 'Find why retries produce a second provider capture', entries: selected.map(entry => ({ type: entry.dataset.key, content: '[redacted sample evidence]' })) };
+      document.getElementById('payload-preview').textContent = JSON.stringify(payload, null, 2);
+    }
+    document.querySelectorAll('.send-entry').forEach(input => input.addEventListener('change', updatePayload));
+    updatePayload();
+    document.getElementById('generate-draft').addEventListener('click', () => { showView('draft'); toast('Sample AI draft generated. No request was sent.'); });
+    document.getElementById('edit-action').addEventListener('click', () => {
+      const editor = document.getElementById('action-editor');
+      const action = document.getElementById('draft-action');
+      const button = document.getElementById('edit-action');
+      if (editor.hidden) { editor.hidden = false; action.hidden = true; button.textContent = 'Save edit'; editor.focus(); return; }
+      const value = editor.value.trim();
+      if (!value) { editor.focus(); toast('Enter a next action before saving.'); return; }
+      action.textContent = value;
+      document.getElementById('return-action').textContent = value;
+      editor.hidden = true;
+      action.hidden = false;
+      button.textContent = 'Edit next action';
+      toast('Your next action was updated in this preview.');
+    });
+    document.getElementById('approve-summary').addEventListener('click', () => {
+      const editor = document.getElementById('action-editor');
+      if (!editor.hidden) {
+        if (!editor.value.trim()) { editor.focus(); toast('Enter a next action before approval.'); return; }
+        document.getElementById('edit-action').click();
+      }
+      showView('return');
+      toast('Summary approved in this concept preview.');
+    });
+    document.getElementById('show-sources').addEventListener('click', () => {
+      const panel = document.getElementById('source-panel');
+      panel.hidden = !panel.hidden;
+      document.getElementById('show-sources').setAttribute('aria-expanded', String(!panel.hidden));
+    });
+    document.getElementById('copy-action').addEventListener('click', async () => {
+      const text = document.getElementById('return-action').textContent;
+      try { await navigator.clipboard.writeText(text); toast('Next action copied. Nothing was run.'); }
+      catch { toast('Clipboard unavailable in this local preview. Nothing was run.'); }
+    });
+  </script>
+</body>
+</html>

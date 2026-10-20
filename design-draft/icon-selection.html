@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>ThreadBack · Icon selection</title>
+  <style>
+    :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#24372b;background:#f5f7f2;font-synthesis:none;text-rendering:optimizeLegibility}
+    *{box-sizing:border-box}body{margin:0;min-width:320px}button{font:inherit;cursor:pointer}button:focus-visible,a:focus-visible{outline:3px solid #58956c;outline-offset:3px}h1,h2,h3,p{margin:0}p{line-height:1.55}img{display:block;max-width:100%}
+    .page{max-width:1400px;margin:auto;padding:28px 36px 80px}.topbar{display:flex;justify-content:space-between;align-items:center;gap:20px;padding-bottom:23px;border-bottom:1px solid #dce5db}.brand{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:800;letter-spacing:-.03em}.brandmark{display:grid;place-items:center;width:31px;height:31px;border-radius:9px;background:#286547;color:#fff;font-size:20px}.brand span:last-child{color:#91a396;font-weight:550}.topbar a{color:#4d7c59;font-size:12px;font-weight:700;text-decoration:none}.topbar a:hover{text-decoration:underline}.hero{padding:42px 0 28px}.eyebrow{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#588461}.hero h1{max-width:800px;margin:13px 0 16px;font-size:clamp(38px,4.8vw,65px);line-height:1.04;letter-spacing:-.065em}.hero p{color:#6b7c6e;font-size:15px;max-width:700px}.count{display:inline-flex;align-items:center;gap:6px;margin-top:18px;padding:6px 11px;background:#e6f0e5;border-radius:999px;color:#3e7451;font-size:11px;font-weight:750}.count:before{content:"";width:6px;height:6px;border-radius:50%;background:#459969}
+    .layout{display:grid;grid-template-columns:minmax(330px,440px) minmax(0,1fr);align-items:start;gap:20px}.preview{position:sticky;top:20px;background:#fff;border:1px solid #dce6db;border-radius:18px;overflow:hidden;box-shadow:0 9px 27px #183c250c}.preview-top{padding:22px 23px 0;display:flex;justify-content:space-between;align-items:center;gap:10px}.preview-top .eyebrow{font-size:10px}.selected-pill{padding:5px 9px;border-radius:999px;background:#e5f1e6;color:#276641;font-size:10px;font-weight:800}.icon-stage{margin:17px 22px 0;min-height:250px;display:grid;place-items:center;position:relative;overflow:hidden;border-radius:14px;background:radial-gradient(circle at 50% 110%,#d6e5d6 0,#e9f0e8 55%,#f3f5ed 100%)}.icon-stage:before{content:"";position:absolute;width:280px;height:280px;border:1px solid #ffffffb0;border-radius:50%;box-shadow:0 0 0 50px #ffffff30,0 0 0 100px #ffffff1e}.icon-stage img{position:relative;width:170px;height:170px;filter:drop-shadow(0 15px 18px #213b2b23)}.selected-copy{padding:20px 23px 19px}.selected-copy h2{font-size:24px;letter-spacing:-.05em}.selected-copy p{font-size:12px;color:#66786b;margin-top:7px}.selected-copy .meaning{font-size:11px;color:#3d7251;margin-top:10px;font-weight:700}.divider{height:1px;background:#e5ebe3;margin:0 23px}.context{padding:18px 23px}.context-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}.context-head h3{font-size:12px}.segmented{display:flex;gap:2px;padding:3px;background:#eff3ec;border-radius:8px}.segmented button{border:0;border-radius:6px;background:transparent;color:#77897a;padding:5px 9px;font-size:10px;font-weight:750}.segmented button[aria-pressed=true]{background:white;color:#2c6040;box-shadow:0 1px 4px #23422d18}.mini-desktop{height:107px;border:1px solid #dbe4d9;border-radius:10px;overflow:hidden;background:linear-gradient(145deg,#d1e1d0,#ecf0e7)}.mini-menubar{height:28px;background:#f8faf5d9;display:flex;align-items:center;gap:11px;padding:0 9px;font-size:10px;color:#34463a}.mini-menubar .spacer{flex:1}.mini-menubar .tray{display:flex;align-items:center;gap:5px;padding:3px 5px;border-radius:5px;background:#edf4ec;color:#2a4935;font-weight:760;white-space:nowrap}.mini-desktop.focused .tray{background:#d8e9d9}.mini-menubar .tray img{width:18px;height:18px}.mini-desktop .desktop-text{font-size:27px;font-weight:800;letter-spacing:-.06em;color:#ffffffb8;padding:25px 18px}.dock-line{display:flex;gap:7px;align-items:center;margin-top:12px;color:#77897b;font-size:10px}.dock-line img{width:35px;height:35px}.assets{display:flex;flex-wrap:wrap;gap:7px;padding:0 23px 21px}.assets a,.copy-button{display:inline-flex;align-items:center;justify-content:center;min-height:31px;padding:6px 10px;border:1px solid #d6e3d5;border-radius:7px;background:#fff;color:#3b6c4b;text-decoration:none;font-size:10px;font-weight:750}.assets a:hover,.copy-button:hover{background:#f0f6ef}.copy-button{margin:0 23px 22px;width:calc(100% - 46px);background:#2d6848;border-color:#2d6848;color:#fff}.copy-button:hover{background:#245a3d}.preview-note{padding:11px 23px;border-top:1px solid #e7ede5;background:#f8faf6;color:#7b8e7e;font-size:10px;line-height:1.45}
+    .gallery-panel{background:#fff;border:1px solid #dce6db;border-radius:18px;padding:20px;box-shadow:0 9px 27px #183c250c}.gallery-header{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:3px 2px 18px}.gallery-header h2{font-size:17px;letter-spacing:-.03em}.gallery-header span{font-size:11px;color:#8a9a8b}.gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.icon-option{position:relative;width:100%;display:flex;flex-direction:column;align-items:flex-start;min-height:224px;padding:14px;text-align:left;border:1px solid #e1e9df;border-radius:12px;background:#fcfdfa;color:#2a3d2f}.icon-option:hover{border-color:#b7d5bd;background:#f9fcf7}.icon-option[aria-pressed=true]{border:2px solid #3c8756;padding:13px;background:#f7fbf5;box-shadow:0 0 0 3px #dcefdc}.option-top{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%}.option-number{font-size:10px;font-weight:850;letter-spacing:.09em;color:#7e9682}.chosen{color:#328552;font-size:10px;font-weight:800;visibility:hidden}.icon-option[aria-pressed=true] .chosen{visibility:visible}.option-art{display:flex;align-items:center;justify-content:center;width:100%;height:111px}.option-art img{width:91px;height:91px;filter:drop-shadow(0 7px 9px #203d261b)}.option-bottom{width:100%}.option-name{display:block;font-size:13px;font-weight:800;letter-spacing:-.025em}.option-desc{display:block;color:#809083;font-size:10px;line-height:1.4;margin-top:3px;min-height:28px}.option-glyph{display:flex;align-items:center;gap:5px;margin-top:8px;padding-top:7px;border-top:1px solid #e9eee7;width:100%;color:#8c9a8d;font-size:9px}.option-glyph img{width:18px;height:18px}.gallery-foot{margin:15px 3px 2px;color:#829185;font-size:11px;line-height:1.45}.status{margin-top:24px;padding:14px 16px;border:1px solid #d9e8d6;border-radius:10px;background:#eaf4e9;color:#426b4b;font-size:12px}.status strong{color:#255a3b}.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);max-width:90vw;padding:10px 13px;border-radius:8px;background:#254d35;color:#fff;box-shadow:0 8px 24px #19372435;font-size:12px;z-index:5}
+    @media(max-width:1080px){.layout{grid-template-columns:1fr}.preview{position:static;display:grid;grid-template-columns:1fr 1fr}.preview-top,.icon-stage,.selected-copy,.divider{grid-column:1}.context,.assets,.copy-button,.preview-note{grid-column:2}.preview-top{align-self:start}.icon-stage{min-height:200px}.selected-copy{padding-bottom:25px}.divider{display:none}.context{padding-top:22px}.preview-note{grid-column:1/-1}.copy-button{align-self:start}.gallery{grid-template-columns:repeat(5,minmax(0,1fr))}}
+    @media(max-width:850px){.gallery{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:640px){.page{padding:17px 13px 50px}.topbar a{font-size:10px}.hero{padding:30px 0 22px}.hero h1{font-size:42px}.hero p{font-size:13px}.preview{display:block}.icon-stage{min-height:230px}.divider{display:block}.gallery-panel{padding:13px}.gallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.icon-option{min-height:210px;padding:10px}.icon-option[aria-pressed=true]{padding:9px}.option-art{height:104px}.option-art img{width:82px;height:82px}}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="topbar"><div class="brand"><span class="brandmark">↩</span> ThreadBack <span>/ icon studies</span></div><a href="menubar-references.html">View menu bar concept ↗</a></header>
+    <section class="hero" aria-labelledby="title"><div class="eyebrow">Ten selectable directions</div><h1 id="title">Choose the mark that stays in your menu bar.</h1><p>Each direction includes an app icon and a simplified monochrome menu bar glyph. Select any card to compare it in both contexts. These are vector assets made for ThreadBack’s return-to-work concept.</p><div class="count">10 original concepts · SVG + PNG assets</div></section>
+    <main class="layout">
+      <aside class="preview" aria-label="Selected icon preview">
+        <div class="preview-top"><span class="eyebrow">Selected direction</span><span class="selected-pill" id="selected-number">04 / 10</span></div>
+        <div class="icon-stage"><img id="selected-app-icon" src="icon-options/04-evidence-list.svg" alt="Evidence List app icon"></div>
+        <div class="selected-copy"><h2 id="selected-name">Evidence List</h2><p id="selected-description">The existing list-and-arrow idea, simplified and sharpened.</p><div class="meaning" id="selected-meaning">A familiar mark for evidence leading to the next step.</div></div>
+        <div class="divider"></div>
+        <div class="context"><div class="context-head"><h3>Menu bar at 18 px</h3><div class="segmented" role="group" aria-label="Menu bar appearance"><button type="button" id="mode-idle" aria-pressed="true">Idle</button><button type="button" id="mode-focused" aria-pressed="false">Focused</button></div></div><div class="mini-desktop" id="mini-desktop"><div class="mini-menubar"><span>●</span><strong>Code</strong><span class="spacer"></span><span class="tray"><img id="selected-menu-glyph" src="icon-options/04-evidence-list-menubar.svg" alt=""><span id="tray-name" hidden>ThreadBack</span></span><span>Tue 20 Oct</span></div><div class="desktop-text">Back to<br>your work.</div></div><div class="dock-line"><img id="dock-icon" src="icon-options/04-evidence-list.svg" alt=""><span>App icon at dock size</span></div></div>
+        <div class="assets"><a id="download-svg" href="icon-options/04-evidence-list.svg" download>App SVG ↓</a><a id="download-png" href="icon-options/04-evidence-list.png" download>512 px PNG ↓</a><a id="download-menubar" href="icon-options/04-evidence-list-menubar.svg" download>Menu glyph ↓</a></div>
+        <button class="copy-button" type="button" id="copy-choice">Copy selected option</button>
+        <div class="preview-note">Option 04 is applied to the app. Selecting another card changes only this preview; tell me if you want to switch.</div>
+      </aside>
+      <section class="gallery-panel" aria-label="Ten icon choices"><div class="gallery-header"><h2>Explore all options</h2><span>Click a card to select</span></div><div class="gallery" id="gallery"></div><p class="gallery-foot">The app icon and menu bar glyph are separate assets so the small menu bar mark stays legible and monochrome.</p></section>
+    </main>
+    <p class="status" id="selection-status" role="status" aria-live="polite"><strong>Previewing:</strong> 04 · Evidence List. Option 04 is applied to the app.</p>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script>
+    const choices = [
+      {id:'01-return-loop',name:'Return Loop',short:'Return arrow around a saved point',description:'A circular return arrow around a saved point.',meaning:'A quick return to the exact place you left.'},
+      {id:'02-thread-path',name:'Thread Path',short:'A connected trail of work',description:'A flowing path with three moments along the same thread.',meaning:'Your reasoning remains connected across interruptions.'},
+      {id:'03-checkpoint',name:'Checkpoint',short:'A saved, trusted place',description:'A bookmark with a clear approval mark.',meaning:'Save a reliable place before stepping away.'},
+      {id:'04-evidence-list',name:'Evidence List',short:'A refined version of the current icon',description:'The existing list-and-arrow idea, simplified and sharpened.',meaning:'A familiar mark for evidence leading to the next step.'},
+      {id:'05-waypoint',name:'Waypoint',short:'Progress toward the next step',description:'A route from the last point to the next action.',meaning:'Know where to go when you return.'},
+      {id:'06-resume-capsule',name:'Resume Capsule',short:'A compact saved summary',description:'A capsule split between saved context and forward motion.',meaning:'A small, reliable packet of context for resuming.'},
+      {id:'07-branch-back',name:'Branch Back',short:'Git-aware return path',description:'A branch diagram with a return arrow.',meaning:'Reconnect your thread even when the repository changed.'},
+      {id:'08-folded-note',name:'Folded Note',short:'A concise handoff note',description:'A folded document containing the essentials.',meaning:'The important details are ready when you are.'},
+      {id:'09-tb-monogram',name:'TB Monogram',short:'A bold product signature',description:'A compact ThreadBack lettermark.',meaning:'A recognizable brand-led icon across app surfaces.'},
+      {id:'10-next-compass',name:'Next Compass',short:'Orientation after interruption',description:'A compass pointing toward the next action.',meaning:'Find direction quickly after context has faded.'}
+    ];
+    const gallery=document.getElementById('gallery');
+    const status=document.getElementById('selection-status');
+    const $=id=>document.getElementById(id);
+    let selectedId='04-evidence-list';
+    try{
+      const version=localStorage.getItem('threadback-icon-choice-version');
+      if(version==='applied-04'){
+        const saved=localStorage.getItem('threadback-icon-choice');
+        if(choices.some(choice=>choice.id===saved))selectedId=saved;
+      }else{
+        localStorage.setItem('threadback-icon-choice-version','applied-04');
+        localStorage.setItem('threadback-icon-choice',selectedId);
+      }
+    }catch{}
+    for(const [index,choice] of choices.entries()){
+      const card=document.createElement('button');card.type='button';card.className='icon-option';card.dataset.id=choice.id;card.setAttribute('aria-label',`Select option ${String(index+1).padStart(2,'0')}: ${choice.name}`);
+      const top=document.createElement('span');top.className='option-top';
+      const number=document.createElement('span');number.className='option-number';number.textContent=String(index+1).padStart(2,'0');
+      const chosen=document.createElement('span');chosen.className='chosen';chosen.textContent='✓ SELECTED';top.append(number,chosen);
+      const art=document.createElement('span');art.className='option-art';const image=document.createElement('img');image.src=`icon-options/${choice.id}.svg`;image.alt='';art.append(image);
+      const bottom=document.createElement('span');bottom.className='option-bottom';const name=document.createElement('span');name.className='option-name';name.textContent=choice.name;const desc=document.createElement('span');desc.className='option-desc';desc.textContent=choice.short;const glyph=document.createElement('span');glyph.className='option-glyph';const mini=document.createElement('img');mini.src=`icon-options/${choice.id}-menubar.svg`;mini.alt='';glyph.append(mini,document.createTextNode('Menu bar glyph'));bottom.append(name,desc,glyph);
+      card.append(top,art,bottom);card.addEventListener('click',()=>select(choice.id));gallery.append(card);
+    }
+    function select(id){
+      const choice=choices.find(item=>item.id===id);if(!choice)return;selectedId=id;
+      const number=String(choices.indexOf(choice)+1).padStart(2,'0');
+      $('selected-number').textContent=`${number} / 10`;$('selected-app-icon').src=`icon-options/${id}.svg`;$('selected-app-icon').alt=`${choice.name} app icon`;
+      $('selected-menu-glyph').src=`icon-options/${id}-menubar.svg`;$('dock-icon').src=`icon-options/${id}.svg`;
+      $('selected-name').textContent=choice.name;$('selected-description').textContent=choice.description;$('selected-meaning').textContent=choice.meaning;
+      $('download-svg').href=`icon-options/${id}.svg`;$('download-png').href=`icon-options/${id}.png`;$('download-menubar').href=`icon-options/${id}-menubar.svg`;
+      status.innerHTML='';const strong=document.createElement('strong');strong.textContent='Previewing: ';status.append(strong,document.createTextNode(`${number} · ${choice.name}. Option 04 is applied to the app.`));
+      for(const card of gallery.children)card.setAttribute('aria-pressed',String(card.dataset.id===id));
+      try{localStorage.setItem('threadback-icon-choice',id)}catch{}
+    }
+    function setMode(focused){$('tray-name').hidden=!focused;$('mode-idle').setAttribute('aria-pressed',String(!focused));$('mode-focused').setAttribute('aria-pressed',String(focused));$('mini-desktop').classList.toggle('focused',focused)}
+    $('mode-idle').addEventListener('click',()=>setMode(false));$('mode-focused').addEventListener('click',()=>setMode(true));
+    let timer;function toast(message){const box=$('toast');box.textContent=message;box.hidden=false;clearTimeout(timer);timer=setTimeout(()=>box.hidden=true,3200)}
+    $('copy-choice').addEventListener('click',async()=>{const choice=choices.find(item=>item.id===selectedId);const number=String(choices.indexOf(choice)+1).padStart(2,'0');try{await navigator.clipboard.writeText(`ThreadBack icon option ${number} — ${choice.name}`);toast(`Copied option ${number} · ${choice.name}.`)}catch{toast(`Selected option ${number} · ${choice.name}. You can tell me this number.`)}});
+    select(selectedId);
+  </script>
+</body>
+</html>
