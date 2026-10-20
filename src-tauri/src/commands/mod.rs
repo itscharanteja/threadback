@@ -433,6 +433,37 @@ pub fn events_capture_git(
     ThreadService::new(&*database(&state)?).capture_git(&thread_id)
 }
 
+#[tauri::command]
+pub fn popover_close(app: tauri::AppHandle) -> Result<(), DomainError> {
+    crate::mark_popover_closed(&app);
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_title(None::<String>);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn popover_set_status(status: String, app: tauri::AppHandle) -> Result<(), DomainError> {
+    if let Some(tray) = app.tray_by_id("main") {
+        let tooltip = match status.as_str() {
+            "working" => "ThreadBack: Recording active thread",
+            "saved" => "ThreadBack: Checkpoint saved locally",
+            "attention" => "ThreadBack: Action needed / Project changed",
+            _ => "ThreadBack",
+        };
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn app_quit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 fn checkpoint_redactor(
     db: &Database,
     checkpoint_id: &CheckpointId,
