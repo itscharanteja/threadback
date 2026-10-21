@@ -32,6 +32,14 @@ import type {
 } from "../bindings/contracts";
 
 export const projects = {
+  gitStatus(rootPath: string): Promise<boolean> {
+    return invoke<boolean>("projects_git_status", { rootPath });
+  },
+
+  initializeGit(rootPath: string): Promise<void> {
+    return invoke<void>("projects_initialize_git", { rootPath });
+  },
+
   create(input: CreateProjectInput): Promise<Project> {
     return invoke<Project>("projects_create", { input });
   },
@@ -105,6 +113,24 @@ export const events = {
   /** Oldest first; pass the previous page's `nextCursor` to continue. */
   list(threadId: ThreadId, cursor?: string): Promise<EventPage> {
     return invoke<EventPage>("events_list", { threadId, cursor: cursor ?? null });
+  },
+
+  /** Read the complete timeline, following the native API's 100-event pages. */
+  async listAll(threadId: ThreadId): Promise<ThreadEvent[]> {
+    const all: ThreadEvent[] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const page = await events.list(threadId, cursor);
+      all.push(...page.events);
+      if (!page.nextCursor) break;
+      if (seenCursors.has(page.nextCursor)) {
+        throw new Error("Activity pagination repeated a cursor.");
+      }
+      seenCursors.add(page.nextCursor);
+      cursor = page.nextCursor;
+    } while (cursor);
+    return all;
   },
 
   addNote(threadId: ThreadId, note: AddNoteInput): Promise<ThreadEvent> {
@@ -224,6 +250,12 @@ export const popover = {
   },
   setStatus(status: "working" | "saved" | "attention" | "idle"): Promise<void> {
     return invoke<void>("popover_set_status", { status });
+  },
+  beginDialog(): Promise<void> {
+    return invoke<void>("popover_begin_dialog");
+  },
+  endDialog(): Promise<void> {
+    return invoke<void>("popover_end_dialog");
   },
   quit(): Promise<void> {
     return invoke<void>("app_quit");

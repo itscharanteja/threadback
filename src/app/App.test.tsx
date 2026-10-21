@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeBackend } from "../test/fakeBackend";
@@ -34,6 +34,36 @@ describe("Menu-bar popover application (App.tsx)", () => {
     expect(screen.getByText("ThreadBack")).toBeInTheDocument();
     expect(screen.getByLabelText("Close ThreadBack")).toBeInTheDocument();
     expect(screen.getByText("Stored locally")).toBeInTheDocument();
+  });
+
+  it("shows every activity page newest first and refreshes when the popover is focused", async () => {
+    const started = backend.events[0];
+    const baseTime = Date.parse(started.timestamp);
+    for (let index = 1; index <= 105; index += 1) {
+      backend.events.push({
+        ...started,
+        id: `seed-${index}`,
+        timestamp: new Date(baseTime + index * 1000).toISOString(),
+        payload: { type: "note_added", payload: { text: `Note ${index}`, label: "fact" } },
+      });
+    }
+
+    render(<App />);
+    const activity = await screen.findByRole("list", { name: "Activity, newest first" });
+    await waitFor(() => expect(within(activity).getAllByRole("listitem")).toHaveLength(106));
+    expect(within(activity).getAllByRole("listitem")[0]).toHaveTextContent("Note 105");
+    expect(within(activity).getAllByRole("listitem")[105]).toHaveTextContent("Thread started");
+    expect(backend.callsTo("events_list")).toHaveLength(2);
+
+    backend.events.push({
+      ...started,
+      id: "seed-106",
+      timestamp: new Date(baseTime + 106000).toISOString(),
+      payload: { type: "note_added", payload: { text: "Note 106", label: "fact" } },
+    });
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => expect(within(activity).getAllByRole("listitem")).toHaveLength(107));
+    expect(within(activity).getAllByRole("listitem")[0]).toHaveTextContent("Note 106");
   });
 
   it("dismisses popover on Escape key and on close button click", async () => {
@@ -204,6 +234,80 @@ describe("Menu-bar popover application (App.tsx)", () => {
     expect(backend.callsTo("threads_start")).toHaveLength(1);
     expect(await screen.findByText("Lock owner race condition")).toBeInTheDocument();
     expect(screen.getByText("Recording this thread")).toBeInTheDocument();
+  });
+
+  it("chooses a new folder while creating a thread and keeps the draft through approval", async () => {
+    bridge.pickedFolder = "/workspace/another-repo";
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("dialog", { name: "ThreadBack menu" });
+    await user.click(screen.getByRole("button", { name: "New thread" }));
+    await user.type(screen.getByLabelText("Title"), "Investigate a new repository");
+    await user.type(screen.getByLabelText("Intended outcome"), "Find the failing build step");
+    await user.click(screen.getByRole("button", { name: "Choose another folder…" }));
+
+    expect(await screen.findByRole("heading", { name: "Approve a project" })).toBeInTheDocument();
+    expect(screen.getByText("/workspace/another-repo")).toBeInTheDocument();
+    expect(screen.getByLabelText("Project name")).toHaveValue("another-repo");
+
+    await user.click(screen.getByLabelText(/Confirm ThreadBack may collect/));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Approve project" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Approve project" }));
+
+    expect(await screen.findByRole("heading", { name: "Start a thread" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Project folder")).toHaveValue("project-2");
+    expect(screen.getByLabelText("Title")).toHaveValue("Investigate a new repository");
+    expect(screen.getByLabelText("Intended outcome")).toHaveValue("Find the failing build step");
+
+    await user.click(screen.getByRole("button", { name: "Start recording" }));
+    expect(backend.callsTo("threads_start")[0].args.input.projectId).toBe("project-2");
+  });
+
+  it("explains missing Git and initializes it only after the user chooses to", async () => {
+    bridge.pickedFolder = "/workspace/plain-folder";
+    backend.gitlessFolders.add(bridge.pickedFolder);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("dialog", { name: "ThreadBack menu" });
+    await user.click(screen.getByRole("button", { name: "New thread" }));
+    await user.click(screen.getByRole("button", { name: "Choose another folder…" }));
+
+    expect(await screen.findByText("This folder needs Git before you can start a thread.")).toBeInTheDocument();
+    expect(screen.getByText(/adds a .git folder; it does not commit your files/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve project" })).toBeDisabled();
+    expect(backend.callsTo("projects_initialize_git")).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Initialize Git in this folder" }));
+    expect(backend.callsTo("projects_initialize_git")).toHaveLength(1);
+    expect(await screen.findByText("Git repository ready.")).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText(/Confirm ThreadBack may collect/));
+    await user.click(screen.getByRole("button", { name: "Approve project" }));
+    expect(await screen.findByRole("heading", { name: "Start a thread" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Project folder")).toHaveValue("project-2");
+  });
+
+  it("selects an already approved folder without asking for approval again", async () => {
+    backend.projectsList.push({
+      id: "project-2",
+      displayName: "Another repository",
+      canonicalRoot: "/workspace/another-repo",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    bridge.pickedFolder = "/workspace/another-repo/";
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("dialog", { name: "ThreadBack menu" });
+    await user.click(screen.getByRole("button", { name: "New thread" }));
+    await user.click(screen.getByRole("button", { name: "Choose another folder…" }));
+
+    expect(screen.getByRole("heading", { name: "Start a thread" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Project folder")).toHaveValue("project-2");
+    expect(backend.callsTo("projects_create")).toHaveLength(0);
   });
 
   it("keeps thread creation visible while viewing a paused thread", async () => {

@@ -67,6 +67,7 @@ export class FakeBackend {
       updatedAt: new Date().toISOString(),
     },
   ];
+  gitlessFolders = new Set<string>();
   policy = {
     projectId: "project-1",
     exclusions: ["fixtures/sensitive/**"],
@@ -328,8 +329,14 @@ export class FakeBackend {
       throw injected;
     }
     switch (command) {
-      case "events_list":
-        return { events: this.events, nextCursor: null };
+      case "events_list": {
+        const start = args.cursor ? Number(args.cursor) : 0;
+        const end = start + 100;
+        return {
+          events: this.events.slice(start, end),
+          nextCursor: end < this.events.length ? String(end) : null,
+        };
+      }
       case "events_add_note": {
         this.requireRecording();
         if (!args.note.text.trim()) throw failure("INVALID_INPUT", "A note cannot be empty.", "text");
@@ -523,6 +530,11 @@ export class FakeBackend {
         return [];
       case "projects_list":
         return this.projectsList;
+      case "projects_git_status":
+        return !this.gitlessFolders.has(String(args.rootPath));
+      case "projects_initialize_git":
+        this.gitlessFolders.delete(String(args.rootPath));
+        return null;
       case "projects_create": {
         const { displayName, rootPath } = args.input;
         if (!String(displayName ?? "").trim()) {
@@ -530,6 +542,9 @@ export class FakeBackend {
         }
         if (!String(rootPath ?? "").trim()) {
           throw failure("INVALID_INPUT", "Choose the project folder first.", "rootPath");
+        }
+        if (this.gitlessFolders.has(String(rootPath))) {
+          throw failure("INVALID_INPUT", "The project folder is not inside a Git repository.", "rootPath");
         }
         const created = {
           id: `project-${this.projectsList.length + 1}`,
@@ -630,6 +645,10 @@ export class FakeBackend {
       case "popover_close":
         return null;
       case "popover_set_status":
+        return null;
+      case "popover_begin_dialog":
+        return null;
+      case "popover_end_dialog":
         return null;
       case "app_quit":
         return null;

@@ -102,12 +102,18 @@ p { line-height: 1.5; }
 .button.ghost { border-color: transparent; background: transparent; }
 .button.danger { border-color: #e5cbbd; color: #87452c; }
 .button.danger:hover:not(:disabled) { background: #fff2ed; border-color: #d9af99; }
+.choose-folder-button { align-self: flex-start; gap: 6px; margin-top: 2px; }
+.choose-folder-button span { font-size: 17px; line-height: 0; }
 
 .note-row { display: grid; grid-template-columns: minmax(95px, 105px) minmax(0, 1fr) 42px; gap: 7px; }
 .note-row select, .note-row input, .field input, .field textarea, .field select, .edit-field { min-width: 0; min-height: 40px; width: 100%; padding: 9px 10px; border: 1px solid #ceddcc; border-radius: 9px; background: #fff; color: var(--ink); font-size: 12px; line-height: 1.35; }
 .note-row select { padding-left: 8px; }
 .note-row .button { width: 42px; padding: 0; font-size: 19px; }
 input::placeholder, textarea::placeholder { color: #8c9b8e; }
+.activity-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.activity-heading .section-label { margin-bottom: 0; }
+.activity-refresh { flex: none; padding: 5px 7px; border: 0; border-radius: 6px; background: transparent; color: var(--green); font-size: 11px; font-weight: 720; }
+.activity-refresh:hover:not(:disabled) { background: var(--green-soft); }
 .activity { list-style: none; margin: 0; padding: 0; }
 .activity li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 9px 0; border-bottom: 1px solid #e9eee7; color: #455b4a; font-size: 12px; line-height: 1.35; }
 .activity li:last-child { border-bottom: 0; }
@@ -118,6 +124,8 @@ input::placeholder, textarea::placeholder { color: #8c9b8e; }
 .notice { margin-top: 15px; padding: 12px 13px; border: 1px solid #d1e8d1; border-radius: 10px; background: #ecf7eb; color: #3a6745; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .notice.warning { border-color: #eddbb4; background: #fff4dc; color: #765a24; }
 .notice.blocked { border-color: #edd1c5; background: #fff1eb; color: #874f37; }
+.git-setup p { margin-top: 5px; }
+.git-setup .button { margin-top: 10px; }
 .summary-card { min-width: 0; margin-top: 17px; padding: 14px; border: 1px solid #dce9da; border-radius: 11px; background: var(--card); }
 .summary-card .section-label { margin-bottom: 6px; }
 .summary-card p { color: #435d49; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }

@@ -39,6 +39,42 @@ export type PopoverMoment =
   | { name: "approve-project" }
   | { name: "settings" };
 
+function newestFirst(items: ThreadEvent[]): ThreadEvent[] {
+  return [...items].sort((a, b) =>
+    Date.parse(b.timestamp) - Date.parse(a.timestamp) || b.id.localeCompare(a.id),
+  );
+}
+
+function activityLabel(event: ThreadEvent): string {
+  switch (event.payload.type) {
+    case "note_added": {
+      const { label, text } = event.payload.payload;
+      return `${label.toUpperCase()}: ${text}`;
+    }
+    case "thread_started": return "Thread started";
+    case "thread_paused": return "Recording paused";
+    case "thread_resumed": return "Recording resumed";
+    case "git_snapshot": return "Git snapshot captured";
+    case "file_changed": return "File change recorded";
+    case "command_started": {
+      const payload = event.payload.payload;
+      const command = typeof payload === "object" && payload !== null && !Array.isArray(payload)
+        ? payload.command : null;
+      return typeof command === "string" ? `Command started: ${command}` : "Command started";
+    }
+    case "command_finished": {
+      const payload = event.payload.payload;
+      const exitCode = typeof payload === "object" && payload !== null && !Array.isArray(payload)
+        ? payload.exitCode : null;
+      return typeof exitCode === "number" ? `Command finished (exit ${exitCode})` : "Command finished";
+    }
+    case "checkpoint_requested": return "Checkpoint saved";
+    case "checkpoint_generated": return "Draft generated";
+    case "checkpoint_approved": return "Checkpoint approved";
+    case "checkpoint_discarded": return "Draft discarded";
+  }
+}
+
 export function App() {
   const data = useAppData();
   const [view, setView] = useState<PopoverMoment>({ name: "threads" });
@@ -47,6 +83,11 @@ export function App() {
 
   // Active moment data
   const [events, setEvents] = useState<ThreadEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [activityRefresh, setActivityRefresh] = useState(0);
+  const loadedEventsThread = useRef<string | null>(null);
+  const lastActivityRefresh = useRef(0);
   const [activeCheckpoint, setActiveCheckpoint] = useState<Checkpoint | null>(null);
   const [preview, setPreview] = useState<PayloadPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -64,7 +105,14 @@ export function App() {
     let unlisten: (() => void) | undefined;
     let disposed = false;
     let lastPlayedAt = 0;
+    const refreshActivity = () => {
+      const now = performance.now();
+      if (now - lastActivityRefresh.current < 200) return;
+      lastActivityRefresh.current = now;
+      setActivityRefresh((current) => current + 1);
+    };
     const playOpeningMotion = () => {
+      refreshActivity();
       const now = performance.now();
       if (now - lastPlayedAt < 120 || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
       lastPlayedAt = now;
@@ -115,6 +163,8 @@ export function App() {
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("");
   const [projectConsent, setProjectConsent] = useState(false);
+  const [projectGitState, setProjectGitState] = useState<"idle" | "checking" | "ready" | "needs-init" | "initializing" | "error">("idle");
+  const projectGitCheck = useRef(0);
   const [defaultExclusions, setDefaultExclusions] = useState<string[]>([]);
   const [approveErrors, setApproveErrors] = useState<Record<string, string>>({});
 
@@ -224,14 +274,38 @@ export function App() {
     }
   }
 
-  // Load events when working or paused
+  // The native timeline is paginated oldest first. Load every page for this thread,
+  // then present the complete activity newest first.
   useEffect(() => {
-    if ("threadId" in view && view.threadId) {
-      eventsApi.list(view.threadId)
-        .then((res) => setEvents(res.events))
-        .catch(() => setEvents([]));
+    if (!("threadId" in view) || !view.threadId) return;
+    const threadId = view.threadId;
+    let cancelled = false;
+    const existingIds = new Set(events.map((event) => event.id));
+    if (loadedEventsThread.current !== threadId) {
+      loadedEventsThread.current = threadId;
+      setEvents([]);
     }
-  }, [view]);
+    setEventsLoading(true);
+    setEventsError(null);
+    eventsApi.listAll(threadId)
+      .then((loaded) => {
+        if (cancelled) return;
+        const loadedIds = new Set(loaded.map((event) => event.id));
+        setEvents((current) => newestFirst([
+          ...loaded,
+          ...current.filter((event) =>
+            event.threadId === threadId && !existingIds.has(event.id) && !loadedIds.has(event.id),
+          ),
+        ]));
+      })
+      .catch((error) => {
+        if (!cancelled) setEventsError(toDomainError(error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setEventsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [view, activityRefresh]);
 
   // Load exclusions on mount
   useEffect(() => {
@@ -317,7 +391,7 @@ export function App() {
         label: noteKind,
         text: noteText.trim(),
       });
-      setEvents((current) => [added, ...current.filter((e) => e.id !== added.id)]);
+      setEvents((current) => newestFirst([added, ...current.filter((e) => e.id !== added.id)]));
       setNoteText("");
       toast(`${noteKind.charAt(0).toUpperCase() + noteKind.slice(1)} note added.`);
     } catch (err) {
@@ -452,7 +526,7 @@ export function App() {
   async function handleStartThreadSubmit(e: FormEvent) {
     e.preventDefault();
     const errors: Record<string, string> = {};
-    if (!newProjectId && !currentProject?.id) errors.projectId = "Choose a project.";
+    if (!newProjectId && !currentProject?.id) errors.projectId = "Choose a project folder.";
     if (!newTitle.trim()) errors.title = "Give the thread a title.";
     if (!newGoal.trim()) errors.goal = "Describe the outcome you are working toward.";
     if (Object.keys(errors).length > 0) {
@@ -486,13 +560,56 @@ export function App() {
     try {
       const folder = await chooseProjectFolder();
       if (folder) {
-        setProjectPath(folder);
-        if (!projectName.trim()) {
-          setProjectName(folderName(folder));
-        }
+        inspectChosenFolder(folder);
       }
     } catch (err) {
       toast(toDomainError(err).message);
+    }
+  }
+
+  function inspectChosenFolder(folder: string) {
+    const request = ++projectGitCheck.current;
+    setProjectPath(folder);
+    setProjectName(folderName(folder));
+    setProjectConsent(false);
+    setProjectGitState("checking");
+    setApproveErrors({});
+    projectsApi.gitStatus(folder)
+      .then((ready) => {
+        if (request === projectGitCheck.current) {
+          setProjectGitState(ready ? "ready" : "needs-init");
+        }
+      })
+      .catch((error) => {
+        if (request === projectGitCheck.current) {
+          setProjectGitState("error");
+          setApproveErrors({ rootPath: toDomainError(error).message });
+        }
+      });
+  }
+
+  async function handleChooseThreadFolder() {
+    setNewThreadErrors({});
+    setBusy("pick-thread-folder");
+    try {
+      const folder = await chooseProjectFolder();
+      if (!folder) return;
+
+      const selectedPath = folder.replace(/\/+$/, "");
+      const approved = data.projects.find(
+        (project) => project.canonicalRoot.replace(/\/+$/, "") === selectedPath,
+      );
+      if (approved) {
+        setNewProjectId(approved.id);
+        return;
+      }
+
+      setView({ name: "approve-project" });
+      inspectChosenFolder(folder);
+    } catch (err) {
+      setNewThreadErrors({ projectId: toDomainError(err).message });
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -500,6 +617,7 @@ export function App() {
     e.preventDefault();
     const errors: Record<string, string> = {};
     if (!projectPath) errors.rootPath = "Choose the project folder first.";
+    else if (projectGitState !== "ready") errors.rootPath = "Initialize Git in this folder before approving it.";
     if (!projectName.trim()) errors.displayName = "Give the project a name.";
     if (!projectConsent) errors.consent = "Confirm that ThreadBack may collect evidence inside this folder.";
     if (Object.keys(errors).length > 0) {
@@ -517,10 +635,28 @@ export function App() {
       setProjectPath(null);
       setProjectName("");
       setProjectConsent(false);
+      setProjectGitState("idle");
       showView({ name: "new-thread", projectId: created.id });
       toast("Project approved.");
     } catch (err) {
       toast(toDomainError(err).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleInitializeGit() {
+    if (!projectPath) return;
+    setBusy("init-git");
+    setProjectGitState("initializing");
+    setApproveErrors({});
+    try {
+      await projectsApi.initializeGit(projectPath);
+      setProjectGitState("ready");
+      toast("Git initialized. You can approve this project now.");
+    } catch (error) {
+      setProjectGitState("needs-init");
+      setApproveErrors({ rootPath: toDomainError(error).message });
     } finally {
       setBusy(null);
     }
@@ -579,7 +715,6 @@ export function App() {
   }
 
   const noteCount = events.filter((e) => e.payload.type === "note_added").length;
-  const recentEvents = events.slice(0, 5);
 
   return (
     <div className="popover" id="popover" ref={popoverRef} role="dialog" aria-label="ThreadBack menu">
@@ -656,7 +791,7 @@ export function App() {
 
             <div className="metric-row">
               <div className="metric">
-                <strong>{events.length}</strong>
+                <strong>{eventsLoading && events.length === 0 ? "…" : events.length}</strong>
                 <span>events</span>
               </div>
               <div className="metric">
@@ -712,33 +847,32 @@ export function App() {
 
             <div className="hairline" />
 
-            <div className="section-label">Latest activity</div>
-            {recentEvents.length === 0 ? (
-              <p className="subtle">No activity recorded in this interval yet.</p>
-            ) : (
-              <ul className="activity" id="activity-list">
-                {recentEvents.map((evt) => {
+            <div className="activity-heading">
+              <div className="section-label">Activity · newest first</div>
+              <button className="activity-refresh" type="button" onClick={() => setActivityRefresh((current) => current + 1)} disabled={eventsLoading}>
+                Refresh
+              </button>
+            </div>
+            {eventsError && <p className="form-error" role="alert">Activity could not be fully loaded: {eventsError}</p>}
+            {eventsLoading && <p className="subtle" role="status">Loading activity…</p>}
+            {!eventsLoading && !eventsError && events.length === 0 && (
+              <p className="subtle">No activity recorded in this thread yet.</p>
+            )}
+            {events.length > 0 && (
+              <ul className="activity" id="activity-list" aria-label="Activity, newest first">
+                {events.map((evt) => {
                   const isNote = evt.payload.type === "note_added";
-                  const noteContent = isNote ? (evt.payload.payload as any) : null;
                   return (
                     <li key={evt.id} className={isNote ? "new-note" : undefined}>
-                      <span>
-                        {isNote
-                          ? `${noteContent?.label ? noteContent.label.toUpperCase() + ": " : ""}${noteContent?.text}`
-                          : evt.payload.type === "git_snapshot"
-                          ? "Git snapshot captured"
-                          : evt.payload.type === "command_finished"
-                          ? `Command finished (exit ${(evt.payload.payload as any)?.exitCode ?? 0})`
-                          : evt.payload.type}
-                      </span>
-                      <time>{formatTime(evt.timestamp)}</time>
+                      <span>{activityLabel(evt)}</span>
+                      <time dateTime={evt.timestamp}>{formatTime(evt.timestamp)}</time>
                     </li>
                   );
                 })}
               </ul>
             )}
             <p className="subtle" style={{ marginTop: 12 }}>
-              Only approved project activity and explicit notes are recorded.
+              Commands appear when run through <code>tb run --</code>. File changes appear in Git snapshots, not as live updates.
             </p>
           </div>
         </section>
@@ -1195,20 +1329,13 @@ export function App() {
 
             <form onSubmit={handleStartThreadSubmit}>
               <div className="field">
-                <label htmlFor="thread-project">Project</label>
-                {data.projects.length === 0 ? (
-                  <button
-                    type="button"
-                    className="button"
-                    onClick={() => showView({ name: "approve-project" })}
-                  >
-                    Approve a project first…
-                  </button>
-                ) : (
+                <label htmlFor="thread-project">Project folder</label>
+                {data.projects.length > 0 && (
                   <select
                     id="thread-project"
                     value={newProjectId || currentProject?.id || ""}
                     onChange={(e) => setNewProjectId(e.target.value)}
+                    disabled={busy !== null}
                   >
                     {data.projects.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -1217,6 +1344,21 @@ export function App() {
                     ))}
                   </select>
                 )}
+                <button
+                  id={data.projects.length === 0 ? "thread-project" : undefined}
+                  type="button"
+                  className="button choose-folder-button"
+                  onClick={handleChooseThreadFolder}
+                  disabled={busy !== null || Boolean(data.loadError)}
+                >
+                  <span aria-hidden="true">＋</span>
+                  {busy === "pick-thread-folder"
+                    ? "Opening folder picker…"
+                    : data.projects.length > 0
+                      ? "Choose another folder…"
+                      : "Choose a folder…"}
+                </button>
+                <p className="subtle">New folders need one-time approval before recording.</p>
                 {newThreadErrors.projectId && (
                   <div className="field-error">{newThreadErrors.projectId}</div>
                 )}
@@ -1304,6 +1446,7 @@ export function App() {
                   className="button"
                   style={{ width: "100%", justifyContent: "flex-start", overflow: "hidden" }}
                   onClick={handlePickFolder}
+                  disabled={busy !== null || projectGitState === "checking"}
                 >
                   📁 {projectPath ? folderName(projectPath) : "Choose folder using system dialog…"}
                 </button>
@@ -1312,6 +1455,27 @@ export function App() {
                 )}
                 {projectPath && <span className="subtle">{projectPath}</span>}
               </div>
+
+              {projectGitState === "checking" && (
+                <p className="notice" role="status">Checking this folder for Git…</p>
+              )}
+              {(projectGitState === "needs-init" || projectGitState === "initializing") && (
+                <div className="notice warning git-setup" role="status">
+                  <strong>This folder needs Git before you can start a thread.</strong>
+                  <p>Initialize Git here to track repository changes. This adds a .git folder; it does not commit your files.</p>
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={handleInitializeGit}
+                  >
+                    {projectGitState === "initializing" ? "Initializing Git…" : "Initialize Git in this folder"}
+                  </button>
+                </div>
+              )}
+              {projectGitState === "ready" && (
+                <p className="notice" role="status">Git repository ready.</p>
+              )}
 
               <div className="field">
                 <label htmlFor="project-name">Project name</label>
@@ -1354,13 +1518,14 @@ export function App() {
               )}
 
               <div className="buttons">
-                <button className="button primary" type="submit" disabled={busy !== null}>
+                <button className="button primary" type="submit" disabled={busy !== null || projectGitState !== "ready"}>
                   Approve project
                 </button>
                 <button
                   className="button"
                   type="button"
-                  onClick={() => showView(lastMainView)}
+                  onClick={() => showView({ name: "new-thread", projectId: newProjectId })}
+                  disabled={busy !== null}
                 >
                   Cancel
                 </button>
