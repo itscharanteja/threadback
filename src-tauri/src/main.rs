@@ -14,72 +14,164 @@ use tauri::{
 #[derive(Default)]
 struct PopoverFocus {
     is_open: bool,
+    dialog_open: bool,
     generation: u64,
-    opened_at: Option<Instant>,
-    gained_focus: bool,
+    last_tray_click: Option<Instant>,
+    #[cfg(target_os = "macos")]
+    previous_presentation: Option<usize>,
 }
 
 impl PopoverFocus {
     fn opened(&mut self) {
         self.is_open = true;
         self.generation = self.generation.wrapping_add(1);
-        self.opened_at = Some(Instant::now());
-        self.gained_focus = false;
     }
 
     fn closed(&mut self) {
         self.is_open = false;
+        self.dialog_open = false;
         self.generation = self.generation.wrapping_add(1);
-        self.opened_at = None;
-        self.gained_focus = false;
     }
 
-    fn focus_changed(&mut self, focused: bool) -> bool {
-        if !self.is_open {
-            return false;
-        }
-        if focused {
+    fn tray_clicked(&mut self) {
+        self.last_tray_click = Some(Instant::now());
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    fn outside_click_generation(&self) -> Option<u64> {
+        (self.is_open
+            && !self.dialog_open
+            && !self
+                .last_tray_click
+                .is_some_and(|clicked| clicked.elapsed() < Duration::from_millis(350)))
+        .then_some(self.generation)
+    }
+
+    fn can_hide_after_outside_click(&self, generation: u64) -> bool {
+        self.is_open && !self.dialog_open && self.generation == generation
+    }
+
+    fn begin_dialog(&mut self) {
+        if self.is_open {
+            self.dialog_open = true;
             self.generation = self.generation.wrapping_add(1);
-            self.gained_focus = true;
-            return false;
         }
-        self.gained_focus
-            && self
-                .opened_at
-                .is_some_and(|opened_at| opened_at.elapsed() >= Duration::from_millis(350))
     }
 
-    fn can_hide_after_blur(&self, generation: u64) -> bool {
-        self.is_open && self.generation == generation
+    fn end_dialog(&mut self) -> bool {
+        if !self.is_open || !self.dialog_open {
+            return false;
+        }
+        self.dialog_open = false;
+        self.generation = self.generation.wrapping_add(1);
+        true
     }
 }
 
 type SharedPopoverFocus = Arc<Mutex<PopoverFocus>>;
 
-#[derive(Default)]
-struct TrayClickGate {
-    last_down: Option<Instant>,
+pub(crate) fn close_popover(app: &tauri::AppHandle) {
+    if let Some(focus) = app.try_state::<SharedPopoverFocus>() {
+        if let Ok(mut state) = focus.lock() {
+            state.closed();
+        }
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+        #[cfg(target_os = "macos")]
+        restore_menu_bar(&window, app);
+    }
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_title(None::<String>);
+    }
 }
 
-impl TrayClickGate {
-    fn should_toggle(&mut self, phase: MouseButtonState) -> bool {
-        match phase {
-            MouseButtonState::Down => {
-                self.last_down = Some(Instant::now());
-                true
-            }
-            MouseButtonState::Up => !self
-                .last_down
-                .take()
-                .is_some_and(|pressed_at| pressed_at.elapsed() < Duration::from_secs(2)),
+#[cfg(target_os = "macos")]
+fn pin_menu_bar(window: &tauri::WebviewWindow, app: &tauri::AppHandle) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSApplicationPresentationOptions};
+
+    let app = app.clone();
+    let apply = move || {
+        let Some(main_thread) = MainThreadMarker::new() else {
+            return;
+        };
+        let native_app = NSApplication::sharedApplication(main_thread);
+        let Some(focus) = app.try_state::<SharedPopoverFocus>() else {
+            return;
+        };
+        let Ok(mut state) = focus.lock() else {
+            return;
+        };
+        if !state.is_open {
+            return;
+        }
+        if state.previous_presentation.is_none() {
+            state.previous_presentation = Some(native_app.presentationOptions().0);
+        }
+        drop(state);
+        // A status-item click can change the active app before this runs, so
+        // currentSystemPresentationOptions is not a reliable fullscreen gate.
+        // Apply our presentation after the popover is shown and focused.
+        if !native_app.isActive() {
+            #[allow(deprecated)]
+            native_app.activateIgnoringOtherApps(true);
+        }
+        native_app.setPresentationOptions(NSApplicationPresentationOptions::AutoHideDock);
+    };
+    if MainThreadMarker::new().is_some() {
+        apply();
+    } else {
+        let _ = window.run_on_main_thread(apply);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn restore_menu_bar(window: &tauri::WebviewWindow, app: &tauri::AppHandle) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSApplicationPresentationOptions};
+
+    let app = app.clone();
+    let apply = move || {
+        let Some(main_thread) = MainThreadMarker::new() else {
+            return;
+        };
+        let previous = app.try_state::<SharedPopoverFocus>().and_then(|focus| {
+            focus.lock().ok().and_then(|mut state| {
+                (!state.is_open)
+                    .then(|| state.previous_presentation.take())
+                    .flatten()
+            })
+        });
+        if let Some(previous) = previous {
+            NSApplication::sharedApplication(main_thread)
+                .setPresentationOptions(NSApplicationPresentationOptions(previous));
+        }
+    };
+    if MainThreadMarker::new().is_some() {
+        apply();
+    } else {
+        let _ = window.run_on_main_thread(apply);
+    }
+}
+
+pub(crate) fn begin_popover_dialog(app: &tauri::AppHandle) {
+    if let Some(focus) = app.try_state::<SharedPopoverFocus>() {
+        if let Ok(mut state) = focus.lock() {
+            state.begin_dialog();
         }
     }
 }
 
-pub(crate) fn mark_popover_closed(app: &tauri::AppHandle) {
-    if let Some(focus) = app.try_state::<SharedPopoverFocus>() {
-        if let Ok(mut state) = focus.lock() {
-            state.closed();
+pub(crate) fn end_popover_dialog(app: &tauri::AppHandle) {
+    let should_refocus = app
+        .try_state::<SharedPopoverFocus>()
+        .and_then(|focus| focus.lock().ok().map(|mut state| state.end_dialog()))
+        .unwrap_or(false);
+    if should_refocus {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
         }
     }
 }
@@ -104,6 +196,45 @@ fn configure_fullscreen_popover(window: &tauri::WebviewWindow) -> tauri::Result<
                 | NSWindowCollectionBehavior::CanJoinAllApplications,
         );
     })
+}
+
+#[cfg(target_os = "macos")]
+fn install_outside_click_monitor(app: &tauri::AppHandle, focus: SharedPopoverFocus) {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSEvent, NSEventMask};
+
+    let app = app.clone();
+    let handler = RcBlock::new(move |_event: std::ptr::NonNull<NSEvent>| {
+        let generation = focus
+            .lock()
+            .ok()
+            .and_then(|state| state.outside_click_generation());
+        let Some(generation) = generation else {
+            return;
+        };
+        let app = app.clone();
+        let focus = Arc::clone(&focus);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(180));
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.run_on_main_thread(move || {
+                    if focus
+                        .lock()
+                        .map(|state| state.can_hide_after_outside_click(generation))
+                        .unwrap_or(false)
+                    {
+                        close_popover(&app);
+                    }
+                });
+            }
+        });
+    });
+
+    let mask = NSEventMask::LeftMouseUp | NSEventMask::RightMouseUp | NSEventMask::OtherMouseUp;
+    if let Some(monitor) = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &handler) {
+        // Installed once for the app lifetime; AppKit removes it at process exit.
+        std::mem::forget(monitor);
+    }
 }
 
 fn show_popover(
@@ -182,9 +313,13 @@ fn show_popover(
             if let Some(tray) = app.tray_by_id("main") {
                 let _ = tray.set_title(None::<String>);
             }
+            #[cfg(target_os = "macos")]
+            restore_menu_bar(&window, app);
             return;
         }
         let _ = window.set_focus();
+        #[cfg(target_os = "macos")]
+        pin_menu_bar(&window, app);
         let _ = window.emit("popover-opened", ());
     }
 }
@@ -194,16 +329,11 @@ fn toggle_popover(
     click_rect: Option<tauri::Rect>,
     focus: &SharedPopoverFocus,
 ) {
+    if let Ok(mut state) = focus.lock() {
+        state.tray_clicked();
+    }
     if focus.lock().map(|state| state.is_open).unwrap_or(false) {
-        if let Some(window) = app.get_webview_window("main") {
-            if let Ok(mut state) = focus.lock() {
-                state.closed();
-            }
-            let _ = window.hide();
-            if let Some(tray) = app.tray_by_id("main") {
-                let _ = tray.set_title(None::<String>);
-            }
-        }
+        close_popover(app);
     } else {
         show_popover(app, click_rect, focus);
     }
@@ -220,43 +350,10 @@ fn setup_tray_and_window(app: &mut tauri::App) -> Result<(), Box<dyn std::error:
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "macos")]
         configure_fullscreen_popover(&window)?;
-
-        let app_handle = app.handle().clone();
-        let focus_for_window = Arc::clone(&focus);
-        window.on_window_event(move |event| {
-            if let tauri::WindowEvent::Focused(focused) = event {
-                let pending_hide = focus_for_window.lock().ok().and_then(|mut state| {
-                    state.focus_changed(*focused).then_some(state.generation)
-                });
-                if let Some(generation) = pending_hide {
-                    let app_handle = app_handle.clone();
-                    let focus_for_window = Arc::clone(&focus_for_window);
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(180));
-                        let should_hide = focus_for_window
-                            .lock()
-                            .map(|mut state| {
-                                if state.can_hide_after_blur(generation) {
-                                    state.closed();
-                                    true
-                                } else {
-                                    false
-                                }
-                            })
-                            .unwrap_or(false);
-                        if should_hide {
-                            if let Some(w) = app_handle.get_webview_window("main") {
-                                let _ = w.hide();
-                            }
-                            if let Some(tray) = app_handle.tray_by_id("main") {
-                                let _ = tray.set_title(None::<String>);
-                            }
-                        }
-                    });
-                }
-            }
-        });
     }
+
+    #[cfg(target_os = "macos")]
+    install_outside_click_monitor(app.handle(), Arc::clone(&focus));
 
     let show_item = MenuItemBuilder::with_id("show", "Open ThreadBack").build(app)?;
     let quit_item = MenuItemBuilder::with_id("quit", "Quit ThreadBack").build(app)?;
@@ -268,7 +365,6 @@ fn setup_tray_and_window(app: &mut tauri::App) -> Result<(), Box<dyn std::error:
 
     let focus_for_menu = Arc::clone(&focus);
     let focus_for_click = Arc::clone(&focus);
-    let click_gate = Mutex::new(TrayClickGate::default());
     let _tray = TrayIconBuilder::with_id("main")
         .icon(tauri::include_image!("icons/tray-evidence-list.png"))
         .icon_as_template(true)
@@ -288,14 +384,8 @@ fn setup_tray_and_window(app: &mut tauri::App) -> Result<(), Box<dyn std::error:
                 ..
             } = event
             {
-                if button == MouseButton::Left {
-                    let should_toggle = click_gate
-                        .lock()
-                        .map(|mut gate| gate.should_toggle(button_state))
-                        .unwrap_or(button_state == MouseButtonState::Up);
-                    if should_toggle {
-                        toggle_popover(tray.app_handle(), Some(rect), &focus_for_click);
-                    }
+                if button == MouseButton::Left && button_state == MouseButtonState::Up {
+                    toggle_popover(tray.app_handle(), Some(rect), &focus_for_click);
                 }
             }
         })
@@ -317,8 +407,12 @@ fn main() {
             commands::app_status,
             commands::popover_close,
             commands::popover_set_status,
+            commands::popover_begin_dialog,
+            commands::popover_end_dialog,
             commands::app_quit,
             commands::projects_create,
+            commands::projects_git_status,
+            commands::projects_initialize_git,
             commands::projects_relink,
             commands::projects_list,
             commands::projects_default_exclusions,
@@ -365,62 +459,59 @@ mod tests {
     use super::*;
 
     #[test]
-    fn popover_ignores_opening_blur_and_hides_after_real_focus_loss() {
+    fn outside_click_dismisses_an_open_popover() {
         let mut focus = PopoverFocus::default();
+        assert!(focus.outside_click_generation().is_none());
         focus.opened();
-
-        assert!(!focus.focus_changed(false));
-        assert!(!focus.focus_changed(true));
-        assert!(!focus.focus_changed(false));
-
-        focus.opened_at = Some(Instant::now() - Duration::from_secs(1));
-        assert!(focus.focus_changed(false));
+        let generation = focus.outside_click_generation().unwrap();
+        assert!(focus.can_hide_after_outside_click(generation));
+        focus.closed();
+        assert!(!focus.can_hide_after_outside_click(generation));
     }
 
     #[test]
-    fn reopening_resets_the_previous_focus_cycle() {
+    fn reopening_restores_outside_click_dismissal() {
         let mut focus = PopoverFocus::default();
         focus.opened();
-        focus.focus_changed(true);
+        let old_generation = focus.outside_click_generation().unwrap();
+        focus.closed();
         focus.opened();
-        focus.opened_at = Some(Instant::now() - Duration::from_secs(1));
-
-        assert!(!focus.focus_changed(false));
+        assert!(!focus.can_hide_after_outside_click(old_generation));
+        assert!(focus.outside_click_generation().is_some());
     }
 
     #[test]
-    fn menu_bar_clicks_toggle_even_when_focus_changes() {
+    fn menu_bar_clicks_toggle_the_popover() {
         let mut focus = PopoverFocus::default();
         assert!(!focus.is_open);
         focus.opened();
+        focus.tray_clicked();
         assert!(focus.is_open);
-        focus.focus_changed(false);
-        assert!(focus.is_open);
+        assert!(focus.outside_click_generation().is_none());
         focus.closed();
         assert!(!focus.is_open);
     }
 
     #[test]
-    fn a_tray_click_cancels_a_pending_blur_hide() {
+    fn tray_click_cancels_a_pending_outside_dismissal() {
         let mut focus = PopoverFocus::default();
         focus.opened();
-        focus.focus_changed(true);
-        focus.opened_at = Some(Instant::now() - Duration::from_secs(1));
-        assert!(focus.focus_changed(false));
-        let pending_generation = focus.generation;
-
-        focus.closed();
-        assert!(!focus.can_hide_after_blur(pending_generation));
-
-        focus.opened();
-        assert!(!focus.can_hide_after_blur(pending_generation));
+        let pending = focus.outside_click_generation().unwrap();
+        focus.tray_clicked();
+        assert!(!focus.can_hide_after_outside_click(pending));
     }
 
     #[test]
-    fn tray_press_toggles_once_even_when_down_and_up_both_arrive() {
-        let mut gate = TrayClickGate::default();
-        assert!(gate.should_toggle(MouseButtonState::Down));
-        assert!(!gate.should_toggle(MouseButtonState::Up));
-        assert!(gate.should_toggle(MouseButtonState::Up));
+    fn folder_dialog_keeps_popover_open_during_outside_clicks() {
+        let mut focus = PopoverFocus::default();
+        focus.opened();
+        let pending = focus.outside_click_generation().unwrap();
+        focus.begin_dialog();
+        assert!(focus.outside_click_generation().is_none());
+        assert!(!focus.can_hide_after_outside_click(pending));
+        assert!(focus.end_dialog());
+        assert!(focus.is_open);
+        assert!(focus.outside_click_generation().is_some());
+        assert!(!focus.end_dialog());
     }
 }

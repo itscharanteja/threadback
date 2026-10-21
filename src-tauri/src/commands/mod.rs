@@ -1,5 +1,7 @@
 use std::{
     fs,
+    path::Path,
+    process::{Command, Output, Stdio},
     sync::{Arc, Mutex},
 };
 
@@ -10,8 +12,8 @@ use threadback_core::{
     Checkpoint, CheckpointId, CheckpointService, CheckpointTrigger, ConfigurationService,
     ConfigurationStatus, ConnectionTestResult, Correction, CreateProjectInput, Database,
     DeletionReceipt, DomainError, EventId, EventPage, ExportService, FileResult, ModelConfigInput,
-    OpenedArtifact, OutboundService, PauseReason, PayloadPreview, Project, ProjectId,
-    ProjectPolicy, RecoveryReport, RedactionTestInput, RedactionTestResult, Redactor,
+    OpenedArtifact, OutboundService, PauseReason, PayloadPreview, Project, ProjectBoundary,
+    ProjectId, ProjectPolicy, RecoveryReport, RedactionTestInput, RedactionTestResult, Redactor,
     RelinkProjectInput, ResumeCapsule, ResumeViewModel, RetentionReport, SecretStore,
     StartThreadInput, ThreadEvent, ThreadId, ThreadService, TokenFactoryClient, WorkThread,
     approve_project, database_path, default_exclusions, default_secret_store, finish_generation,
@@ -68,6 +70,65 @@ pub fn projects_create(
     state: State<'_, AppState>,
 ) -> Result<Project, DomainError> {
     approve_project(&*database(&state)?, input)
+}
+
+fn run_project_git(root: &Path, args: &[&str]) -> Result<Output, DomainError> {
+    let mut command = Command::new("git");
+    command
+        .args(args)
+        .current_dir(root)
+        .env_clear()
+        .env("LC_ALL", "C")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null());
+    for key in ["PATH", "HOME"] {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
+    command.output().map_err(|_| {
+        DomainError::invalid_state("Git could not be started. Install Git and try again.")
+    })
+}
+
+fn project_has_git(root_path: &str) -> Result<bool, DomainError> {
+    let boundary = ProjectBoundary::new(root_path, &[])?;
+    let output = run_project_git(boundary.root(), &["rev-parse", "--is-inside-work-tree"])?;
+    if output.status.success() {
+        if output.stdout.starts_with(b"true") {
+            return Ok(true);
+        }
+        return Err(DomainError::invalid_input(
+            "Choose a Git working folder rather than a bare repository.",
+            "rootPath",
+        ));
+    }
+    if String::from_utf8_lossy(&output.stderr).contains("not a git repository") {
+        return Ok(false);
+    }
+    Err(DomainError::invalid_state(
+        "Git could not inspect this folder. Check its permissions and try again.",
+    ))
+}
+
+#[tauri::command]
+pub fn projects_git_status(root_path: String) -> Result<bool, DomainError> {
+    project_has_git(&root_path)
+}
+
+#[tauri::command]
+pub fn projects_initialize_git(root_path: String) -> Result<(), DomainError> {
+    let boundary = ProjectBoundary::new(&root_path, &[])?;
+    if project_has_git(&root_path)? {
+        return Ok(());
+    }
+    let output = run_project_git(boundary.root(), &["init", "-q"])?;
+    if !output.status.success() || !project_has_git(&root_path)? {
+        return Err(DomainError::invalid_state(
+            "Git could not be initialized in this folder. Check write access and try again.",
+        ));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -435,13 +496,7 @@ pub fn events_capture_git(
 
 #[tauri::command]
 pub fn popover_close(app: tauri::AppHandle) -> Result<(), DomainError> {
-    crate::mark_popover_closed(&app);
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.hide();
-    }
-    if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_title(None::<String>);
-    }
+    crate::close_popover(&app);
     Ok(())
 }
 
@@ -457,6 +512,16 @@ pub fn popover_set_status(status: String, app: tauri::AppHandle) -> Result<(), D
         let _ = tray.set_tooltip(Some(tooltip));
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn popover_begin_dialog(app: tauri::AppHandle) {
+    crate::begin_popover_dialog(&app);
+}
+
+#[tauri::command]
+pub fn popover_end_dialog(app: tauri::AppHandle) {
+    crate::end_popover_dialog(&app);
 }
 
 #[tauri::command]
@@ -476,6 +541,27 @@ fn checkpoint_redactor(
         }
     }
     Redactor::new(&[])
+}
+
+#[cfg(test)]
+mod project_git_tests {
+    use super::*;
+
+    #[test]
+    fn initializes_git_only_when_the_selected_folder_needs_it() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().to_string_lossy().into_owned();
+
+        assert!(!projects_git_status(path.clone()).unwrap());
+        assert!(!folder.path().join(".git").exists());
+
+        projects_initialize_git(path.clone()).unwrap();
+        assert!(folder.path().join(".git").is_dir());
+        assert!(projects_git_status(path.clone()).unwrap());
+
+        projects_initialize_git(path).unwrap();
+        assert!(folder.path().join(".git").is_dir());
+    }
 }
 
 fn database<'a, 'r>(

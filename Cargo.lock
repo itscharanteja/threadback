@@ -4505,13 +4505,16 @@ dependencies = [
 name = "threadback-desktop"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "chrono",
+ "objc2",
  "objc2-app-kit",
  "serde",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-single-instance",
+ "tempfile",
  "threadback-core",
 ]
 
