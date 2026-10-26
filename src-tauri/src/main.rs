@@ -237,9 +237,96 @@ fn install_outside_click_monitor(app: &tauri::AppHandle, focus: SharedPopoverFoc
     }
 }
 
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PopoverFrame {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+#[cfg(target_os = "macos")]
+fn popover_frame(cursor_x: f64, screen: PopoverFrame, visible: PopoverFrame) -> PopoverFrame {
+    const MARGIN: f64 = 12.0;
+    const MENU_BAR_CLEARANCE: f64 = 28.0;
+    let left = visible.x.max(screen.x) + MARGIN;
+    let right = (visible.x + visible.width).min(screen.x + screen.width) - MARGIN;
+    let bottom = visible.y.max(screen.y) + MARGIN;
+    let top = (visible.y + visible.height).min(screen.y + screen.height - MENU_BAR_CLEARANCE);
+    let width = 420.0_f64.min((right - left).max(1.0));
+    let height = 660.0_f64.min((top - bottom).max(1.0));
+
+    PopoverFrame {
+        x: (cursor_x - width / 2.0).clamp(left, (right - width).max(left)),
+        y: top - height,
+        width,
+        height,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn position_popover_on_cursor_display(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSEvent, NSScreen, NSWindow};
+
+    let native_window = window.ns_window()? as usize;
+    let place = move || {
+        let Some(main_thread) = MainThreadMarker::new() else {
+            return;
+        };
+        // Mouse location and NSScreen frames are both global AppKit points.
+        // The tray event rectangle is physical pixels and can use the wrong
+        // display scale when a second monitor has a different backing scale.
+        let cursor = NSEvent::mouseLocation();
+        let screens = NSScreen::screens(main_thread);
+        let Some(screen) = screens.iter().find(|screen| {
+            let frame = screen.frame();
+            cursor.x >= frame.origin.x
+                && cursor.x < frame.origin.x + frame.size.width
+                && cursor.y >= frame.origin.y
+                && cursor.y < frame.origin.y + frame.size.height
+        }) else {
+            return;
+        };
+        let screen_frame = screen.frame();
+        let visible_frame = screen.visibleFrame();
+        let target = popover_frame(
+            cursor.x,
+            PopoverFrame {
+                x: screen_frame.origin.x,
+                y: screen_frame.origin.y,
+                width: screen_frame.size.width,
+                height: screen_frame.size.height,
+            },
+            PopoverFrame {
+                x: visible_frame.origin.x,
+                y: visible_frame.origin.y,
+                width: visible_frame.size.width,
+                height: visible_frame.size.height,
+            },
+        );
+
+        let native_window = unsafe { &*(native_window as *const NSWindow) };
+        let mut frame = native_window.frame();
+        frame.origin.x = target.x;
+        frame.origin.y = target.y;
+        frame.size.width = target.width;
+        frame.size.height = target.height;
+        native_window.setFrame_display(frame, true);
+    };
+
+    if MainThreadMarker::new().is_some() {
+        place();
+        Ok(())
+    } else {
+        window.run_on_main_thread(place)
+    }
+}
+
 fn show_popover(
     app: &tauri::AppHandle,
-    click_rect: Option<tauri::Rect>,
+    _click_rect: Option<tauri::Rect>,
     focus: &SharedPopoverFocus,
 ) {
     if let Some(window) = app.get_webview_window("main") {
@@ -251,7 +338,13 @@ fn show_popover(
         if let Ok(mut state) = focus.lock() {
             state.opened();
         }
-        if let Some(rect) = click_rect {
+        if let Some(tray) = app.tray_by_id("main") {
+            let _ = tray.set_title(Some("ThreadBack"));
+        }
+        #[cfg(target_os = "macos")]
+        let _ = position_popover_on_cursor_display(&window);
+        #[cfg(not(target_os = "macos"))]
+        if let Some(rect) = _click_rect {
             let window_scale = window.scale_factor().unwrap_or(1.0);
             let physical_pos = rect.position.to_physical::<f64>(window_scale);
             let physical_size = rect.size.to_physical::<f64>(window_scale);
@@ -302,9 +395,6 @@ fn show_popover(
                 x: (target_x * scale_factor).round() as i32,
                 y: (target_y * scale_factor).round() as i32,
             }));
-        }
-        if let Some(tray) = app.tray_by_id("main") {
-            let _ = tray.set_title(Some("ThreadBack"));
         }
         if window.show().is_err() {
             if let Ok(mut state) = focus.lock() {
@@ -513,5 +603,53 @@ mod tests {
         assert!(focus.is_open);
         assert!(focus.outside_click_generation().is_some());
         assert!(!focus.end_dialog());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn popover_stays_on_an_external_display_to_the_right() {
+        let external = PopoverFrame {
+            x: 1440.0,
+            y: -100.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let frame = popover_frame(3300.0, external, external);
+        assert_eq!(frame.width, 420.0);
+        assert_eq!(frame.height, 660.0);
+        assert!(frame.x >= external.x + 12.0);
+        assert!(frame.x + frame.width <= external.x + external.width - 12.0);
+        assert!(frame.y >= external.y + 12.0);
+        assert!(frame.y + frame.height <= external.y + external.height - 28.0);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn popover_stays_on_an_external_display_to_the_left() {
+        let external = PopoverFrame {
+            x: -1920.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let frame = popover_frame(-1880.0, external, external);
+        assert_eq!(frame.x, -1908.0);
+        assert!(frame.x + frame.width < 0.0);
+        assert!(frame.y >= 12.0);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn popover_shrinks_to_fit_a_short_display() {
+        let short = PopoverFrame {
+            x: 1440.0,
+            y: 0.0,
+            width: 600.0,
+            height: 400.0,
+        };
+        let frame = popover_frame(2000.0, short, short);
+        assert_eq!(frame.height, 360.0);
+        assert_eq!(frame.y, 12.0);
+        assert!(frame.x + frame.width <= 2028.0);
     }
 }
